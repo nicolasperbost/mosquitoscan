@@ -48,7 +48,7 @@ export const Route = createFileRoute("/detection")({
 });
 
 function DetectionPage() {
-  const { state, startListening, stopListening } = useMosquitoDetection();
+  const { state, startListening, stopListening, triggerMockMeasurement, isSimulating } = useMosquitoDetection();
   const [started, setStarted] = useState(false);
   const [sweep, setSweep] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
@@ -56,7 +56,7 @@ function DetectionPage() {
   const [nightMode, setNightMode] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const room = useRoomStore((s) => s.room);
-  const [viewMode, setViewMode] = useState<"3d" | "floorplan" | "elevation">("3d");
+  const [viewMode, setViewMode] = useState<"radar" | "3d" | "floorplan" | "elevation">("radar");
   const [elevationFace, setElevationFace] = useState<Face>("east");
 
   useEffect(() => () => stopListening(), [stopListening]);
@@ -204,12 +204,26 @@ function DetectionPage() {
             </div>
           </div>
 
-          <button
-            onClick={handleStart}
-            className="btn-primary text-lg !py-5 !px-10 flex items-center gap-2 animate-cta-pulse"
-          >
-            <Play size={20} /> Démarrer l'écoute
-          </button>
+          <div className="flex flex-col gap-3 w-full max-w-xs">
+            <button
+              onClick={handleStart}
+              className="btn-primary text-lg !py-5 !px-10 flex items-center justify-center gap-2 animate-cta-pulse w-full"
+            >
+              <Play size={20} /> Démarrer l'écoute
+            </button>
+
+            <button
+              onClick={() => {
+                setStarted(true);
+                setSweep(true);
+                setTimeout(() => setSweep(false), 1200);
+                triggerMockMeasurement();
+              }}
+              className="btn-ghost text-sm !py-3 !px-6 border border-white/10 hover:border-white/20 flex items-center justify-center gap-2 rounded-full w-full"
+            >
+              <Radio size={16} className="text-teal" /> Déclencher la mesure (Démo)
+            </button>
+          </div>
 
           <p className="text-[10px] text-muted-foreground text-center max-w-xs">
             Posez le smartphone, micro vers le haut. L'analyse cible la bande 300–800 Hz.
@@ -270,17 +284,17 @@ function DetectionPage() {
         {room ? (
           <>
             <div className="mt-4 flex gap-1 glass-panel p-1 text-[11px]">
-              {(["3d", "floorplan", "elevation"] as const).map((m) => (
+              {(["radar", "3d", "floorplan", "elevation"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setViewMode(m)}
-                  className="flex-1 py-1.5 rounded-md transition font-display"
+                  className="flex-1 py-1.5 rounded-md transition font-display text-center"
                   style={{
                     background: viewMode === m ? "var(--teal)" : "transparent",
                     color: viewMode === m ? "#0A0F1E" : "var(--muted-foreground)",
                   }}
                 >
-                  {m === "3d" ? "Vue 3D" : m === "floorplan" ? "Plan" : "Élévation"}
+                  {m === "radar" ? "Radar" : m === "3d" ? "Vue 3D" : m === "floorplan" ? "Plan" : m === "elevation" ? "Élévation" : m}
                 </button>
               ))}
             </div>
@@ -302,12 +316,23 @@ function DetectionPage() {
               </div>
             )}
             <div className="glass-panel mt-2 p-2">
-              <IsometricRoomView
-                roomModel={room}
-                detectionEvent={detectionEvent}
-                viewMode={viewMode}
-                elevationFace={elevationFace}
-              />
+              {viewMode === "radar" ? (
+                <RadarVisualization
+                  isActive={state.isListening}
+                  isDetecting={state.isDetecting}
+                  confidence={state.confidence}
+                  frequency={state.frequency}
+                  zone={state.zone}
+                  speciesHint={state.speciesHint}
+                />
+              ) : (
+                <IsometricRoomView
+                  roomModel={room}
+                  detectionEvent={detectionEvent}
+                  viewMode={viewMode}
+                  elevationFace={elevationFace}
+                />
+              )}
             </div>
           </>
         ) : (
@@ -316,6 +341,9 @@ function DetectionPage() {
               isActive={state.isListening}
               isDetecting={state.isDetecting}
               confidence={state.confidence}
+              frequency={state.frequency}
+              zone={state.zone}
+              speciesHint={state.speciesHint}
             />
           </div>
         )}
@@ -440,13 +468,27 @@ function DetectionPage() {
 
       {/* Action bar */}
       <div className="fixed bottom-20 inset-x-0 px-4 z-30">
-        <div className="max-w-md mx-auto glass-panel p-3 flex items-center justify-center gap-2">
+        <div className="max-w-md mx-auto glass-panel p-3 flex items-center justify-center gap-3">
           <button
-            onClick={() => (state.isListening ? stopListening() : startListening())}
-            className="btn-ghost flex items-center gap-2 !py-2 !px-4 text-sm"
+            onClick={() => (state.isListening ? stopListening() : handleStart())}
+            className="btn-ghost flex items-center gap-2 !py-2 !px-4 text-[13px] border border-white/5 hover:border-white/10"
           >
             {state.isListening ? <Pause size={14} /> : <Play size={14} />}
-            {state.isListening ? "Pause" : "Reprendre"}
+            {state.isListening ? "Pause" : "Écoute Live"}
+          </button>
+
+          <button
+            onClick={() => {
+              setSweep(true);
+              setTimeout(() => setSweep(false), 1200);
+              triggerMockMeasurement();
+            }}
+            disabled={isSimulating}
+            className="btn-primary flex items-center gap-2 !py-2.5 !px-5 text-[13px] bg-teal text-slate-950 font-semibold hover:bg-teal-hover transition-all rounded-full shadow-lg"
+            style={{ boxShadow: "0 0 12px rgba(0, 229, 195, 0.3)" }}
+          >
+            <Play size={14} className="fill-current" />
+            {isSimulating ? "Simulation..." : "Déclencher la mesure"}
           </button>
         </div>
         {validation && (

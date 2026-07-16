@@ -196,6 +196,66 @@ export function ZonesTab({
               <div className="w-2 h-2 bg-rose-500 rounded-full border border-white" />
               <div className="absolute w-6 h-6 rounded-full border-2 border-dashed border-rose-500/60 animate-spin" />
             </div>
+
+            {/* Active Radar Triangulation Overlay */}
+            {isTriangulating && (
+              <div className="absolute inset-0 z-30 pointer-events-none bg-teal-500/[0.01] overflow-hidden">
+                {/* Sonar sweep centered on crosshair */}
+                <div
+                  className="absolute rounded-full border border-teal-500/10 bg-teal-500/[0.02] -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
+                  style={{
+                    left: `${triangulateTarget.x}%`,
+                    top: `${triangulateTarget.y}%`,
+                    width: "300%",
+                    height: "300%",
+                    transformOrigin: "center",
+                  }}
+                >
+                  {/* Sweep gradient conic slice */}
+                  <div
+                    className="w-full h-full rounded-full"
+                    style={{
+                      background: "conic-gradient(from 0deg, #00E5C3 0%, rgba(0, 229, 195, 0.08) 12%, transparent 40%, transparent 100%)",
+                      animation: "radar-spin 2.5s linear infinite",
+                    }}
+                  />
+                </div>
+                
+                {/* Concentric expanding wave ripples */}
+                {[0, 0.5, 1.0].map((delay, idx) => (
+                  <div
+                    key={idx}
+                    className="absolute rounded-full border border-teal-400/50 -translate-x-1/2 -translate-y-1/2"
+                    style={{
+                      left: `${triangulateTarget.x}%`,
+                      top: `${triangulateTarget.y}%`,
+                      width: "10px",
+                      height: "10px",
+                      animation: "map-ping-expand 2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite",
+                      animationDelay: `${delay}s`,
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+            <style>{`
+              @keyframes radar-spin {
+                from { transform: rotate(0deg); }
+                to { transform: rotate(360deg); }
+              }
+              @keyframes map-ping-expand {
+                0% {
+                  width: 0px;
+                  height: 0px;
+                  opacity: 0.9;
+                }
+                100% {
+                  width: 320px;
+                  height: 320px;
+                  opacity: 0;
+                }
+              }
+            `}</style>
           </div>
 
           {/* Map Footer: Interactive action buttons to process simulation */}
