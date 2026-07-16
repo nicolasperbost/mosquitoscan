@@ -13,3 +13,6 @@ export default defineConfig({
     server: { entry: "server" },
   },
 });
+
+// Sync trigger from AI Studio: 2026-07-16T12:21:00
+
