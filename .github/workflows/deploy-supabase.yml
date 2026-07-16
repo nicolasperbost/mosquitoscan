@@ -1,0 +1,29 @@
+name: Deploy Supabase
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Deploy to Supabase
+        run: |
+          npm install -g supabase
+          supabase link --project-ref pdypseywigpzgawhlmvu -p "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          supabase functions deploy ingest-sensor --project-ref pdypseywigpzgawhlmvu
+          supabase functions deploy analyze-site-photos --project-ref pdypseywigpzgawhlmvu
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
