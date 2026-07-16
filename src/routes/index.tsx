@@ -1,212 +1,404 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  Smartphone,
-  Clock,
-  SlidersHorizontal,
-  VolumeX,
-  Moon,
-  Lightbulb,
-  X,
-  Lock,
-  CheckCircle2,
-  Camera,
-  Map,
-} from "lucide-react";
-import { BottomNav } from "@/components/BottomNav";
-import { useRoomStore } from "@/lib/roomStore";
+import { Layout, MapPin, Smartphone, Bell, FileText } from "lucide-react";
+
+// Import types & mock data
+import { Site, RiskZone, Device, AlertEvent, TimelineEvent } from "../types/mosquitoscan";
+import { SITES_DATA, INITIAL_ZONES, INITIAL_DEVICES, INITIAL_ALERTS, INITIAL_TIMELINE } from "../data/mockData";
+
+// Import subcomponents
+import { SitesTab } from "../components/mosquitoscan/SitesTab";
+import { ZonesTab } from "../components/mosquitoscan/ZonesTab";
+import { CapteursTab } from "../components/mosquitoscan/CapteursTab";
+import { AlertesTab } from "../components/mosquitoscan/AlertesTab";
+import { RapportsTab } from "../components/mosquitoscan/RapportsTab";
+import { AddDeviceModal } from "../components/mosquitoscan/AddDeviceModal";
+import { ExportModal } from "../components/mosquitoscan/ExportModal";
+import { OnboardingWizard } from "../components/mosquitoscan/OnboardingWizard";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "MosquitoRadar — Détection acoustique de moustiques" },
-      { name: "description", content: "Analyse acoustique en temps réel et triangulation multi-appareils pour localiser les moustiques." },
-      { property: "og:title", content: "MosquitoRadar" },
-      { property: "og:description", content: "Détection acoustique et triangulation des moustiques." },
+      { title: "MosquitoScan™ Pro — Détection acoustique de moustiques" },
+      { name: "description", content: "La solution de surveillance passive bio-acoustique pour les professionnels de l'hôtellerie et du contrôle 3D." },
+      { property: "og:title", content: "MosquitoScan™ Pro" },
+      { property: "og:description", content: "Surveillance passive bio-acoustique et diagnostic 3D." },
     ],
   }),
   component: Index,
 });
 
 function Index() {
-  const room = useRoomStore((s) => s.room);
-  const detections = useRoomStore((s) => s.detections);
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  // Navigation tabs: sites -> zones -> capteurs -> alertes -> rapports
+  const [activeSubTab, setActiveSubTab] = useState<"sites" | "zones" | "capteurs" | "alertes" | "rapports">("sites");
 
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!localStorage.getItem("mosquito_onboarded")) setShowOnboarding(true);
-  }, []);
+  // Shared state management
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("site-1");
+  const [sites, setSites] = useState<Site[]>(SITES_DATA);
+  const [zones, setZones] = useState<RiskZone[]>(INITIAL_ZONES);
+  const [devices, setDevices] = useState<Device[]>(INITIAL_DEVICES);
+  const [alerts, setAlerts] = useState<AlertEvent[]>(INITIAL_ALERTS);
+  const [timeline, setTimeline] = useState<TimelineEvent[]>(INITIAL_TIMELINE);
 
-  const dismissOnboarding = () => {
-    localStorage.setItem("mosquito_onboarded", "true");
-    setShowOnboarding(false);
+  // Analysis execution states
+  const [analysisMode, setAnalysisMode] = useState<"on_demand" | "periodic">("on_demand");
+  const [analysisPeriodSec, setAnalysisPeriodSec] = useState<number>(15); // Default 15s for visual simulation
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [nextAnalysisCountdown, setNextAnalysisCountdown] = useState<number>(15);
+  const [isPeriodicActive, setIsPeriodicActive] = useState<boolean>(false);
+
+  // New Device creation states
+  const [showAddDeviceModal, setShowAddDeviceModal] = useState<boolean>(false);
+
+  // Selected entities for drill-down details
+  const [selectedZone, setSelectedZone] = useState<RiskZone | null>(INITIAL_ZONES[0]);
+  const [selectedAlert, setSelectedAlert] = useState<AlertEvent | null>(INITIAL_ALERTS[0]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>("dev-master");
+
+  // Filters for alerts
+  const [filterPeriod, setFilterPeriod] = useState<string>("all");
+  const [filterTemp, setFilterTemp] = useState<number>(15); // Show alerts above this temp
+  const [filterIntensity, setFilterIntensity] = useState<string>("all");
+  const [filterUrgency, setFilterUrgency] = useState<string>("all");
+
+  // Onboarding wizard state
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
+  const [onboardingStep, setOnboardingStep] = useState<number>(1);
+  const [onboardingCompleted, setOnboardingCompleted] = useState<boolean>(false);
+
+  // Acoustic test generator state
+  const [testFreq, setTestFreq] = useState<number>(545);
+  const [isGeneratingTest, setIsGeneratingTest] = useState<boolean>(false);
+  const [testLog, setTestLog] = useState<string | null>(null);
+
+  // Export engine state
+  const [showExportModal, setShowExportModal] = useState<boolean>(false);
+  const [exportProgress, setExportProgress] = useState<number>(0);
+  const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [exportType, setExportType] = useState<"intervention" | "haccp" | "client">("intervention");
+
+  // Triangulation live coordinates simulation
+  const [triangulateTarget, setTriangulateTarget] = useState<{ x: number; y: number }>({ x: 48, y: 35 });
+  const [isTriangulating, setIsTriangulating] = useState<boolean>(false);
+  const [triangulateResult, setTriangulateResult] = useState<string | null>(null);
+
+  // Selected site data
+  const currentSite = sites.find((s) => s.id === selectedSiteId) || sites[0];
+
+  // Weather configuration values (interactive simulation)
+  const [tempCelsius, setTempCelsius] = useState<number>(29);
+  const [humidityPercent, setHumidityPercent] = useState<number>(75);
+
+  // Auto calculate dynamic site risk based on temp, hum, active alerts
+  const calculateDynamicRisk = (temp: number, hum: number, alertsCount: number) => {
+    const climateFactor = (temp * 1.3 + hum * 0.7) / 2;
+    const alertFactor = alertsCount * 8;
+    return Math.min(100, Math.round(climateFactor + alertFactor));
   };
 
-  const nightMode = false;
+  const dynamicRiskScore = calculateDynamicRisk(
+    tempCelsius,
+    humidityPercent,
+    alerts.filter((a) => a.status === "active" && a.species.includes("Tigre")).length
+  );
+
+  // Update root site risk score on change
+  useEffect(() => {
+    setSites((prev) =>
+      prev.map((s) =>
+        s.id === selectedSiteId
+          ? { ...s, riskScore: dynamicRiskScore }
+          : s
+      )
+    );
+  }, [dynamicRiskScore, selectedSiteId]);
+
+  // Periodic acoustic simulation tracker
+  useEffect(() => {
+    let timer: any;
+    if (isPeriodicActive) {
+      timer = setInterval(() => {
+        setNextAnalysisCountdown((prev) => {
+          if (prev <= 1) {
+            setIsAnalyzing(true);
+            
+            // Random simulation trigger
+            setTimeout(() => {
+              setIsAnalyzing(false);
+              const shouldAlert = Math.random() > 0.4;
+              if (shouldAlert) {
+                const isTigre = Math.random() > 0.5;
+                const speciesName = isTigre ? ("Aedes Albopictus (Tigre)" as const) : ("Culex Pipiens (Commun)" as const);
+                const randomZones = ["Abords de la fontaine centrale", "Sous-bois Terrasse Nord", "Stockage technique & poubelles"];
+                const loc = randomZones[Math.floor(Math.random() * randomZones.length)];
+                
+                const newAlert: AlertEvent = {
+                  id: `alert-sim-${Date.now()}`,
+                  timestamp: new Date().toISOString().replace("T", " ").substring(0, 19),
+                  timeLabel: "À l'instant",
+                  period: "Soir",
+                  frequencyHz: isTigre ? 545 : 495,
+                  maxVolumeDb: -15 - Math.floor(Math.random() * 25),
+                  durationSec: Math.floor(Math.random() * 8) + 2,
+                  location: loc,
+                  species: speciesName,
+                  confidence: 85 + Math.floor(Math.random() * 14),
+                  status: "active",
+                  urgency: isTigre ? "Critique" : "Normale",
+                  intensity: "Élevée",
+                  temperature: tempCelsius,
+                };
+
+                setAlerts((prevA) => [newAlert, ...prevA]);
+                setSelectedAlert(newAlert);
+
+                // Add to timeline
+                const newTimelineEvent: TimelineEvent = {
+                  id: `tl-sim-${Date.now()}`,
+                  timestamp: "À l'instant",
+                  type: "detection",
+                  title: isTigre ? "Alerte Moustique Tigre !" : "Alerte Moustique Commun",
+                  description: `Détection acoustique suspecte sur ${loc} à ${newAlert.frequencyHz}Hz.`,
+                  operator: "Météo-IA",
+                };
+                setTimeline((prevT) => [newTimelineEvent, ...prevT]);
+              }
+            }, 1500);
+
+            return analysisPeriodSec;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isPeriodicActive, analysisPeriodSec, tempCelsius]);
+
+  // Export engine mock timeline
+  const triggerExport = (type: "intervention" | "haccp" | "client") => {
+    setExportType(type);
+    setShowExportModal(true);
+    setIsExporting(true);
+    setExportProgress(0);
+
+    const interval = setInterval(() => {
+      setExportProgress((p) => {
+        if (p >= 100) {
+          clearInterval(interval);
+          setIsExporting(false);
+          return 100;
+        }
+        return p + 25;
+      });
+    }, 300);
+  };
+
+  // Filter alerts based on selection criteria
+  const filteredAlerts = alerts.filter((alert) => {
+    if (filterPeriod !== "all" && alert.period !== filterPeriod) return false;
+    if (alert.temperature < filterTemp) return false;
+    if (filterIntensity !== "all" && alert.intensity !== filterIntensity) return false;
+    if (filterUrgency !== "all" && alert.urgency !== filterUrgency) return false;
+    return true;
+  });
 
   return (
-    <main className="min-h-screen pb-32 px-5 pt-10 max-w-md mx-auto flex flex-col">
-      <h1 className="text-4xl font-display font-bold text-center tracking-tight">
-        Mosquito<span className="text-teal">Radar</span>
-      </h1>
-      <p className="text-center text-muted-foreground mt-2 text-sm">
-        Détection acoustique nocturne · Triangulation multi-appareils
-      </p>
+    <div className="w-full min-h-screen bg-[#0A0F1E] font-sans text-slate-200 p-4 sm:p-6 md:p-8 space-y-6 relative overflow-hidden select-none">
+      
+      {/* Decorative bioluminescent lights in background */}
+      <div className="absolute top-0 right-1/4 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl pointer-events-none" />
 
-      {/* 3-metric status bar */}
-      <div className="glass-panel mt-6 px-2 py-3 flex items-stretch justify-around text-center">
-        <div className="flex-1 flex flex-col items-center gap-1">
-          <Smartphone size={14} className="text-teal" />
-          <div className="font-mono-x text-teal text-sm">
-            {room?.devicePositions.length ?? 1}
-          </div>
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-            Connecté
-          </div>
-        </div>
-        <div className="w-px bg-white/5" />
-        <div className="flex-1 flex flex-col items-center gap-1">
-          <VolumeX size={14} className="text-teal" />
-          <div className="font-mono-x text-teal text-sm">−42 dB</div>
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-            Ambiant
-          </div>
-        </div>
-        <div className="w-px bg-white/5" />
-        <div className="flex-1 flex flex-col items-center gap-1">
-          <Moon size={14} className={nightMode ? "text-amber-x" : "text-muted-foreground"} />
-          <div className={`font-mono-x text-sm ${nightMode ? "text-amber-x" : "text-muted-foreground"}`}>
-            {nightMode ? "ON" : "OFF"}
-          </div>
-          <div className="text-[9px] uppercase tracking-wider text-muted-foreground">
-            Mode nuit
-          </div>
-        </div>
-      </div>
-
-      {/* Sonar with mosquito icon */}
-      <div className="relative w-40 h-40 mx-auto my-8 flex items-center justify-center">
-        {[0, 0.8, 1.6].map((d, i) => (
-          <span
-            key={i}
-            className="absolute inset-0 rounded-full border-2 animate-sonar"
-            style={{
-              borderColor: "var(--teal)",
-              opacity: 0.6 - i * 0.2,
-              animationDelay: `${d}s`,
-              animationDuration: "2.5s",
-            }}
-          />
-        ))}
-        <svg
-          viewBox="0 0 48 48"
-          className="relative w-14 h-14"
-          fill="none"
-          stroke="var(--teal)"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          style={{ filter: "drop-shadow(0 0 8px var(--teal-glow))" }}
-        >
-          <ellipse cx="24" cy="26" rx="3" ry="6" fill="var(--teal)" />
-          <path d="M21 22 Q12 14 6 18 Q10 22 18 24 Z" fill="rgba(0,229,195,0.25)" />
-          <path d="M27 22 Q36 14 42 18 Q38 22 30 24 Z" fill="rgba(0,229,195,0.25)" />
-          <line x1="22" y1="20" x2="18" y2="14" />
-          <line x1="26" y1="20" x2="30" y2="14" />
-          <line x1="23" y1="32" x2="21" y2="40" />
-          <line x1="25" y1="32" x2="27" y2="40" />
-        </svg>
-      </div>
-
-      {/* Primary CTA */}
-      <Link
-        to="/detection"
-        className="btn-primary text-center text-lg !py-5 animate-cta-pulse"
-      >
-        Démarrer la détection
-      </Link>
-
-      {showOnboarding && (
-        <div
-          className="glass-panel mt-3 p-3 flex items-start gap-2 animate-[fade-in_0.3s_ease-out]"
-          style={{ borderColor: "rgba(245,158,11,0.4)" }}
-        >
-          <Lightbulb size={16} className="text-amber-x mt-0.5 shrink-0" />
-          <div className="flex-1 text-xs">
-            <span className="text-foreground">
-              💡 Commencez par configurer votre pièce pour des résultats précis.
-            </span>
-            <Link to="/setup" className="text-teal block mt-1 hover:underline">
-              Configurer ma pièce →
-            </Link>
-          </div>
-          <button
-            onClick={dismissOnboarding}
-            className="text-muted-foreground hover:text-foreground p-1"
-            aria-label="Fermer"
-          >
-            <X size={14} />
-          </button>
-        </div>
-      )}
-
-      {!room && !showOnboarding && (
-        <Link
-          to="/setup"
-          className="text-center text-xs text-teal mt-3 hover:underline underline-offset-4"
-        >
-          ✨ Configurer ma pièce (modèle 3D)
-        </Link>
-      )}
-
-      {/* Secondary actions */}
-      <div className="grid grid-cols-3 gap-3 mt-4">
-        <Link to="/multi" className="glass-panel p-4 flex flex-col items-center gap-2 text-xs text-center hover:border-teal transition">
-          <Smartphone size={20} className="text-teal" />
-          Multi-appareils
-        </Link>
-        <Link to="/history" className="glass-panel p-4 flex flex-col items-center gap-2 text-xs text-center hover:border-teal transition">
-          <Clock size={20} className="text-teal" />
-          Historique
-        </Link>
-        <Link to="/settings" className="glass-panel p-4 flex flex-col items-center gap-2 text-xs text-center hover:border-teal transition">
-          <SlidersHorizontal size={20} className="text-teal" />
-          Réglages
-        </Link>
-      </div>
-
-      <div className="grid grid-cols-2 gap-3 mt-3">
-        <Link to="/expertise" className="glass-panel p-4 flex flex-col items-center gap-2 text-xs text-center hover:border-teal transition">
-          <Camera size={20} className="text-teal" />
-          Expertise visuelle
-        </Link>
-        <Link to="/site-map" className="glass-panel p-4 flex flex-col items-center gap-2 text-xs text-center hover:border-teal transition">
-          <Map size={20} className="text-teal" />
-          Plan de site
-        </Link>
-      </div>
-
-      <div className="mt-auto pt-8 flex flex-col items-center gap-1">
-        {room && (
-          <p className="text-[10px] text-teal flex items-center gap-1">
-            <CheckCircle2 size={11} /> {room.name} configurée
-            {detections.length > 0 && (
-              <span className="text-muted-foreground">
-                {" "}· {detections.length} détection(s)
+      {/* Header and top tab selectors */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4 relative z-10">
+        <div className="text-left space-y-1">
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-white flex items-center gap-1.5">
+              Mosquito<span className="text-[#00E5C3]">Scan</span>™
+              <span className="text-[10px] bg-teal-500/10 border border-teal-500/30 text-teal-300 font-mono font-bold px-1.5 py-0.5 rounded tracking-wider uppercase">
+                Console Pro
               </span>
-            )}
+            </h1>
+          </div>
+          <p className="text-xs text-slate-400">
+            Vigilance bio-acoustique HACCP & Diagnostics d'intervention pour techniciens 3D
           </p>
+        </div>
+
+        {/* Dynamic navigation tabs */}
+        <nav className="flex flex-wrap bg-slate-900/80 border border-slate-800/80 p-1 rounded-xl gap-1 text-xs">
+          <button
+            onClick={() => setActiveSubTab("sites")}
+            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "sites" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            <Layout className="w-3.5 h-3.5" />
+            Clients & Établissements
+          </button>
+          
+          <button
+            onClick={() => {
+              setActiveSubTab("zones");
+              // Default to fontaine zone on maps tab
+              if (!selectedZone && zones.length > 0) setSelectedZone(zones[0]);
+            }}
+            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "zones" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5" />
+            Cartographie & Triangulation
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab("capteurs")}
+            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "capteurs" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            <Smartphone className="w-3.5 h-3.5" />
+            Capteurs & Spectrogramme
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab("alertes")}
+            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "alertes" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            Alertes & Priorisation
+          </button>
+
+          <button
+            onClick={() => setActiveSubTab("rapports")}
+            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeSubTab === "rapports" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Rapports & HACCP
+          </button>
+        </nav>
+      </header>
+
+      {/* Onboarding Guide Widget */}
+      <OnboardingWizard
+        showOnboarding={showOnboarding}
+        setShowOnboarding={setShowOnboarding}
+        onboardingStep={onboardingStep}
+        setOnboardingStep={setOnboardingStep}
+        setOnboardingCompleted={setOnboardingCompleted}
+      />
+
+      {/* Central Tab Content views routing */}
+      <div className="relative z-10">
+        {activeSubTab === "sites" && (
+          <SitesTab
+            sites={sites}
+            selectedSiteId={selectedSiteId}
+            setSelectedSiteId={setSelectedSiteId}
+            currentSite={currentSite}
+            tempCelsius={tempCelsius}
+            setTempCelsius={setTempCelsius}
+            humidityPercent={humidityPercent}
+            setHumidityPercent={setHumidityPercent}
+            dynamicRiskScore={dynamicRiskScore}
+            timeline={timeline}
+            triggerExport={triggerExport}
+          />
         )}
-        <p
-          className="text-[10px] uppercase tracking-widest flex items-center gap-1"
-          style={{ color: "#6B7280" }}
-        >
-          <Lock size={10} /> Mode local · Aucune donnée envoyée
-        </p>
+
+        {activeSubTab === "zones" && (
+          <ZonesTab
+            zones={zones}
+            setZones={setZones}
+            devices={devices}
+            selectedZone={selectedZone}
+            setSelectedZone={setSelectedZone}
+            triangulateTarget={triangulateTarget}
+            setTriangulateTarget={setTriangulateTarget}
+            isTriangulating={isTriangulating}
+            setIsTriangulating={setIsTriangulating}
+            triangulateResult={triangulateResult}
+            setTriangulateResult={setTriangulateResult}
+          />
+        )}
+
+        {activeSubTab === "capteurs" && (
+          <CapteursTab
+            devices={devices}
+            setDevices={setDevices}
+            selectedDeviceId={selectedDeviceId}
+            setSelectedDeviceId={setSelectedDeviceId}
+            setShowAddDeviceModal={setShowAddDeviceModal}
+            setTimeline={setTimeline}
+            isPeriodicActive={isPeriodicActive}
+            setIsPeriodicActive={setIsPeriodicActive}
+            nextAnalysisCountdown={nextAnalysisCountdown}
+            setNextAnalysisCountdown={setNextAnalysisCountdown}
+            analysisPeriodSec={analysisPeriodSec}
+            isAnalyzing={isAnalyzing}
+            testFreq={testFreq}
+            setTestFreq={setTestFreq}
+            isGeneratingTest={isGeneratingTest}
+            setIsGeneratingTest={setIsGeneratingTest}
+            testLog={testLog}
+            setTestLog={setTestLog}
+          />
+        )}
+
+        {activeSubTab === "alertes" && (
+          <AlertesTab
+            alerts={alerts}
+            setAlerts={setAlerts}
+            filteredAlerts={filteredAlerts}
+            selectedAlert={selectedAlert}
+            setSelectedAlert={setSelectedAlert}
+            filterPeriod={filterPeriod}
+            setFilterPeriod={setFilterPeriod}
+            filterTemp={filterTemp}
+            setFilterTemp={setFilterTemp}
+            filterIntensity={filterIntensity}
+            setFilterIntensity={setFilterIntensity}
+            filterUrgency={filterUrgency}
+            setFilterUrgency={setFilterUrgency}
+            setTimeline={setTimeline}
+            triggerExport={triggerExport}
+            currentSiteName={currentSite.name}
+          />
+        )}
+
+        {activeSubTab === "rapports" && (
+          <RapportsTab
+            currentSiteName={currentSite.name}
+            triggerExport={triggerExport}
+          />
+        )}
       </div>
 
-      <BottomNav />
-    </main>
+      {/* Auxiliary Dialog Modals */}
+      {showAddDeviceModal && (
+        <AddDeviceModal
+          setShowAddDeviceModal={setShowAddDeviceModal}
+          setDevices={setDevices}
+          setTimeline={setTimeline}
+        />
+      )}
+
+      <ExportModal
+        showExportModal={showExportModal}
+        setShowExportModal={setShowExportModal}
+        isExporting={isExporting}
+        exportProgress={exportProgress}
+        exportType={exportType}
+        currentSite={currentSite}
+      />
+
+    </div>
   );
 }
