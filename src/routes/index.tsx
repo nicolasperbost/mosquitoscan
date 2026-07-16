@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Layout, MapPin, Smartphone, Bell, FileText } from "lucide-react";
+import { Layout, MapPin, Smartphone, Bell, FileText, LogOut } from "lucide-react";
+import { useAuth } from "../components/AuthGate";
 
 // Import types & mock data
 import { Site, RiskZone, Device, AlertEvent, TimelineEvent } from "../types/mosquitoscan";
@@ -29,6 +30,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const { currentUser, logout } = useAuth();
   // Navigation tabs: sites -> zones -> capteurs -> alertes -> rapports
   const [activeSubTab, setActiveSubTab] = useState<"sites" | "zones" | "capteurs" | "alertes" | "rapports">("sites");
 
@@ -213,7 +215,7 @@ function Index() {
       <div className="absolute bottom-1/4 left-1/4 w-96 h-96 bg-teal-500/5 rounded-full blur-3xl pointer-events-none" />
 
       {/* Header and top tab selectors */}
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-4 relative z-10">
+      <header className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 border-b border-slate-800 pb-4 relative z-10">
         <div className="text-left space-y-1">
           <div className="flex items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-bold font-display tracking-tight text-white flex items-center gap-1.5">
@@ -228,62 +230,82 @@ function Index() {
           </p>
         </div>
 
-        {/* Dynamic navigation tabs */}
-        <nav className="flex flex-wrap bg-slate-900/80 border border-slate-800/80 p-1 rounded-xl gap-1 text-xs">
-          <button
-            onClick={() => setActiveSubTab("sites")}
-            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === "sites" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            <Layout className="w-3.5 h-3.5" />
-            Clients & Établissements
-          </button>
-          
-          <button
-            onClick={() => {
-              setActiveSubTab("zones");
-              // Default to fontaine zone on maps tab
-              if (!selectedZone && zones.length > 0) setSelectedZone(zones[0]);
-            }}
-            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === "zones" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            <MapPin className="w-3.5 h-3.5" />
-            Cartographie & Triangulation
-          </button>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full xl:w-auto">
+          {/* Dynamic navigation tabs */}
+          <nav className="flex flex-wrap bg-slate-900/80 border border-slate-800/80 p-1 rounded-xl gap-1 text-xs flex-1 sm:flex-initial">
+            <button
+              onClick={() => setActiveSubTab("sites")}
+              className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === "sites" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <Layout className="w-3.5 h-3.5" />
+              Clients & Établissements
+            </button>
+            
+            <button
+              onClick={() => {
+                setActiveSubTab("zones");
+                // Default to fontaine zone on maps tab
+                if (!selectedZone && zones.length > 0) setSelectedZone(zones[0]);
+              }}
+              className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === "zones" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              Cartographie & Triangulation
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("capteurs")}
-            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === "capteurs" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            Capteurs & Spectrogramme
-          </button>
+            <button
+              onClick={() => setActiveSubTab("capteurs")}
+              className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === "capteurs" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              Capteurs & Spectrogramme
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("alertes")}
-            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === "alertes" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            <Bell className="w-3.5 h-3.5" />
-            Alertes & Priorisation
-          </button>
+            <button
+              onClick={() => setActiveSubTab("alertes")}
+              className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === "alertes" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <Bell className="w-3.5 h-3.5" />
+              Alertes & Priorisation
+            </button>
 
-          <button
-            onClick={() => setActiveSubTab("rapports")}
-            className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeSubTab === "rapports" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
-            }`}
-          >
-            <FileText className="w-3.5 h-3.5" />
-            Rapports & HACCP
-          </button>
-        </nav>
+            <button
+              onClick={() => setActiveSubTab("rapports")}
+              className={`px-3.5 py-2 rounded-lg font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                activeSubTab === "rapports" ? "bg-[#00E5C3] text-slate-950 font-extrabold shadow-md" : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5" />
+              Rapports & HACCP
+            </button>
+          </nav>
+
+          {/* User Profile & Logout */}
+          <div className="flex items-center gap-2.5 bg-slate-900/80 border border-slate-800 p-1.5 rounded-xl shrink-0">
+            <div className={`w-7 h-7 rounded-lg ${currentUser?.avatarColor || "bg-teal-600"} flex items-center justify-center text-[10px] font-bold font-mono text-white shadow-sm`}>
+              {currentUser?.name ? currentUser.name.split(" ").map(n => n[0]).join("") : "U"}
+            </div>
+            <div className="text-left leading-none">
+              <span className="text-[11px] font-bold block text-white mb-0.5 max-w-[100px] truncate">{currentUser?.name || "Nicolas"}</span>
+              <span className="text-[8px] text-teal-400 font-bold uppercase tracking-wider block leading-none">{currentUser?.role || "Admin"}</span>
+            </div>
+            <button
+              onClick={logout}
+              className="p-1 bg-slate-800 hover:bg-slate-700 hover:text-rose-400 rounded-lg text-slate-400 transition-colors cursor-pointer ml-1"
+              title="Se déconnecter"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
       </header>
 
       {/* Onboarding Guide Widget */}

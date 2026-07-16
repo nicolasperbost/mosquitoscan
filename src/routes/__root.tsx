@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "sonner";
+import AuthGate from "../components/AuthGate";
 
 function NotFoundComponent() {
   return (
@@ -129,10 +130,12 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <div key="page-root" className="animate-[fade-in_0.18s_ease-out]">
-        <Outlet />
-      </div>
+      <AuthGate>
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <div key="page-root" className="animate-[fade-in_0.18s_ease-out]">
+          <Outlet />
+        </div>
+      </AuthGate>
       <Toaster
         position="top-center"
         theme="dark"

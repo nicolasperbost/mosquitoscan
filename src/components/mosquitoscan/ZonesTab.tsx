@@ -1,5 +1,5 @@
 import React from "react";
-import { MapPin, Sliders, Volume2, PlusCircle, Cpu, CheckCircle2 } from "lucide-react";
+import { MapPin, Sliders, Volume2, PlusCircle, Cpu, CheckCircle2, Radio } from "lucide-react";
 import { RiskZone, Device } from "../../types/mosquitoscan";
 
 interface ZonesTabProps {
@@ -271,10 +271,11 @@ export function ZonesTab({
               <button
                 onClick={handleTriangulate}
                 disabled={isTriangulating}
-                className="px-4 py-2 bg-slate-950 hover:bg-slate-900 disabled:opacity-50 text-teal-400 border border-teal-500/20 rounded-xl font-bold font-mono text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl font-bold font-mono text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                style={{ animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" }}
               >
-                <Volume2 className="w-4 h-4" />
-                {isTriangulating ? "Triangulation..." : "Simuler Émission (Test Sonore)"}
+                <Radio className={`w-4 h-4 ${isTriangulating ? "animate-spin" : "animate-pulse"}`} />
+                {isTriangulating ? "Mesure en cours..." : "Déclencher la mesure radar"}
               </button>
             </div>
           </div>
