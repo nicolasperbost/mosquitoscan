@@ -12,12 +12,14 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SiteMapRouteImport } from './routes/site-map'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ProRouteImport } from './routes/pro'
 import { Route as MultiRouteImport } from './routes/multi'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as ExpertiseRouteImport } from './routes/expertise'
 import { Route as DevicesRouteImport } from './routes/devices'
 import { Route as DetectionRouteImport } from './routes/detection'
+import { Route as AccountRouteImport } from './routes/account'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as JoinCodeRouteImport } from './routes/join.$code'
 
@@ -34,6 +36,11 @@ const SetupRoute = SetupRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProRoute = ProRouteImport.update({
+  id: '/pro',
+  path: '/pro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MultiRoute = MultiRouteImport.update({
@@ -66,6 +73,11 @@ const DetectionRoute = DetectionRouteImport.update({
   path: '/detection',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountRoute = AccountRouteImport.update({
+  id: '/account',
+  path: '/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -79,12 +91,14 @@ const JoinCodeRoute = JoinCodeRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/detection': typeof DetectionRoute
   '/devices': typeof DevicesRoute
   '/expertise': typeof ExpertiseRoute
   '/history': typeof HistoryRoute
   '/import': typeof ImportRoute
   '/multi': typeof MultiRoute
+  '/pro': typeof ProRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/site-map': typeof SiteMapRoute
@@ -92,12 +106,14 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/detection': typeof DetectionRoute
   '/devices': typeof DevicesRoute
   '/expertise': typeof ExpertiseRoute
   '/history': typeof HistoryRoute
   '/import': typeof ImportRoute
   '/multi': typeof MultiRoute
+  '/pro': typeof ProRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/site-map': typeof SiteMapRoute
@@ -106,12 +122,14 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account': typeof AccountRoute
   '/detection': typeof DetectionRoute
   '/devices': typeof DevicesRoute
   '/expertise': typeof ExpertiseRoute
   '/history': typeof HistoryRoute
   '/import': typeof ImportRoute
   '/multi': typeof MultiRoute
+  '/pro': typeof ProRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/site-map': typeof SiteMapRoute
@@ -121,12 +139,14 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account'
     | '/detection'
     | '/devices'
     | '/expertise'
     | '/history'
     | '/import'
     | '/multi'
+    | '/pro'
     | '/settings'
     | '/setup'
     | '/site-map'
@@ -134,12 +154,14 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account'
     | '/detection'
     | '/devices'
     | '/expertise'
     | '/history'
     | '/import'
     | '/multi'
+    | '/pro'
     | '/settings'
     | '/setup'
     | '/site-map'
@@ -147,12 +169,14 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account'
     | '/detection'
     | '/devices'
     | '/expertise'
     | '/history'
     | '/import'
     | '/multi'
+    | '/pro'
     | '/settings'
     | '/setup'
     | '/site-map'
@@ -161,12 +185,14 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountRoute: typeof AccountRoute
   DetectionRoute: typeof DetectionRoute
   DevicesRoute: typeof DevicesRoute
   ExpertiseRoute: typeof ExpertiseRoute
   HistoryRoute: typeof HistoryRoute
   ImportRoute: typeof ImportRoute
   MultiRoute: typeof MultiRoute
+  ProRoute: typeof ProRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
   SiteMapRoute: typeof SiteMapRoute
@@ -194,6 +220,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pro': {
+      id: '/pro'
+      path: '/pro'
+      fullPath: '/pro'
+      preLoaderRoute: typeof ProRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/multi': {
@@ -238,6 +271,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DetectionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account': {
+      id: '/account'
+      path: '/account'
+      fullPath: '/account'
+      preLoaderRoute: typeof AccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -257,12 +297,14 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountRoute: AccountRoute,
   DetectionRoute: DetectionRoute,
   DevicesRoute: DevicesRoute,
   ExpertiseRoute: ExpertiseRoute,
   HistoryRoute: HistoryRoute,
   ImportRoute: ImportRoute,
   MultiRoute: MultiRoute,
+  ProRoute: ProRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
   SiteMapRoute: SiteMapRoute,
@@ -271,3 +313,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
