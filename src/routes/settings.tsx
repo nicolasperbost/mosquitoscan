@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { BottomNav } from "@/components/BottomNav";
-import { ChevronLeft, AlertTriangle, CheckCircle2, Volume2, Trash2, Info, Mic, Upload, Radio as RadioIcon, Cloud, CloudOff } from "lucide-react";
+import { ChevronLeft, AlertTriangle, CheckCircle2, Volume2, Trash2, Info, Mic, Upload, Radio as RadioIcon, Cloud, CloudOff, Building2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { roomStore, useRoomStore } from "@/lib/roomStore";
 import { learningStore, useLearningStore } from "@/lib/learning";
@@ -309,6 +309,21 @@ function SettingsPage() {
           </Link>
         </div>
       </section>
+
+      {/* AJOUT (lot 5) — tableau de bord pro, réservé aux comptes connectés */}
+      <Link
+        to="/pro"
+        className="glass-panel p-4 mb-3 flex items-center justify-between"
+      >
+        <div className="flex items-center gap-2">
+          <Building2 size={16} className="text-teal" />
+          <div>
+            <div className="text-sm font-display">Tableau de bord pro</div>
+            <div className="text-[11px] text-muted-foreground">Multi-sites, zones à risque, rapports d'intervention</div>
+          </div>
+        </div>
+        <span className="text-teal text-xs">Ouvrir →</span>
+      </Link>
 
       <section className="glass-panel p-4 mb-3">
         <div className="flex justify-between items-center gap-3">
