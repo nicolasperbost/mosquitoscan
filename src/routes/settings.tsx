@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { BottomNav } from "@/components/BottomNav";
-import { ChevronLeft, AlertTriangle, CheckCircle2, Volume2, Trash2, Info, Mic, Upload, Radio as RadioIcon } from "lucide-react";
+import { ChevronLeft, AlertTriangle, CheckCircle2, Volume2, Trash2, Info, Mic, Upload, Radio as RadioIcon, Cloud, CloudOff } from "lucide-react";
 import { useEffect, useState } from "react";
 import { roomStore, useRoomStore } from "@/lib/roomStore";
 import { learningStore, useLearningStore } from "@/lib/learning";
 import { isWideBandEnabled, setWideBandEnabled } from "@/hooks/useMosquitoDetection";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/settings")({
@@ -78,11 +79,8 @@ function SettingsPage() {
   const navigate = useNavigate();
   const room = useRoomStore((s) => s.room);
   const learning = useLearningStore((s) => s);
+  const { user, loading: authLoading } = useAuth();
   const [sensitivity, setSensitivity] = useState(2);
-  // CORRECTIF: ce toggle était un useState local pur, jamais persisté ni lu
-  // par le hook de détection — donc "Plage de fréquences large" ne changeait
-  // strictement rien au comportement réel. Il est maintenant initialisé
-  // depuis la préférence persistée et écrit dedans à chaque changement.
   const [wide, setWideState] = useState(false);
   useEffect(() => setWideState(isWideBandEnabled()), []);
   const setWide = (v: boolean) => {
@@ -166,6 +164,37 @@ function SettingsPage() {
         <h1 className="text-base font-display font-semibold text-center">Réglages</h1>
         <span />
       </header>
+
+      {/* AJOUT (socle comptes/sync cloud) — statut de compte, en tout premier
+          pour lui donner la visibilité qu'il mérite maintenant que c'est le
+          socle du futur modèle payant. */}
+      <Link
+        to="/account"
+        className="glass-panel p-4 mb-4 flex items-center justify-between"
+      >
+        <div className="flex items-center gap-2">
+          {authLoading ? (
+            <span className="text-xs text-muted-foreground">Vérification…</span>
+          ) : user ? (
+            <>
+              <Cloud size={16} className="text-teal" />
+              <div>
+                <div className="text-sm font-display">Synchronisé</div>
+                <div className="text-[11px] text-muted-foreground">{user.email}</div>
+              </div>
+            </>
+          ) : (
+            <>
+              <CloudOff size={16} className="text-muted-foreground" />
+              <div>
+                <div className="text-sm font-display">Pas de compte</div>
+                <div className="text-[11px] text-muted-foreground">Données locales à cet appareil uniquement</div>
+              </div>
+            </>
+          )}
+        </div>
+        <span className="text-teal text-xs">{user ? "Gérer →" : "Se connecter →"}</span>
+      </Link>
 
       {/* Ma pièce */}
       {room ? (
@@ -365,11 +394,11 @@ function SettingsPage() {
                 <span>Donnée</span><span>Stockage</span><span>Envoi</span>
               </div>
               {[
-                ["Fréquence (Hz)", "Local + Cloud", "Si toggle ON"],
+                ["Fréquence (Hz)", "Local + Cloud si connecté", "Toujours (Cloud) si compte actif"],
                 ["Audio brut", "Jamais", "Jamais"],
                 ["Position GPS", "Jamais", "Jamais"],
-                ["Modèle de pièce", "Local seulement", "Non"],
-                ["Validations", "Local", "Si toggle ON"],
+                ["Modèle de pièce", "Local + Cloud si connecté", "Si compte actif"],
+                ["Validations", "Local + Cloud si connecté", "Si compte actif"],
               ].map((row) => (
                 <div key={row[0]} className="grid grid-cols-3 gap-2 py-2 border-b border-white/5 font-mono-x">
                   <span className="text-foreground">{row[0]}</span>
@@ -390,8 +419,9 @@ function SettingsPage() {
             <AlertTriangle size={32} className="mx-auto text-red-500" style={{ color: "var(--red)" }} />
             <h3 className="font-display text-sm mt-3">Effacer toutes les données ?</h3>
             <p className="text-xs text-muted-foreground mt-2">
-              Cela supprimera la pièce configurée, l'historique et les préférences.
-              Cette action est irréversible.
+              Cela supprimera la pièce configurée, l'historique et les préférences de cet appareil.
+              {user ? " Tes données synchronisées dans le cloud restent intactes — reconnecte-toi pour les retrouver." : ""}
+              {" "}Cette action est irréversible localement.
             </p>
             <div className="flex gap-2 mt-4">
               <button onClick={() => setShowResetConfirm(false)} className="btn-ghost flex-1 text-xs">

@@ -12,7 +12,8 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "sonner";
-import AuthGate from "../components/AuthGate";
+import { useAuth } from "@/hooks/useAuth";
+import { roomStore } from "@/lib/roomStore";
 
 function NotFoundComponent() {
   return (
@@ -125,17 +126,30 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+/** AJOUT (socle comptes/sync cloud) — active la synchronisation cloud pour
+ *  TOUTE l'app dès qu'un utilisateur est connecté, pas seulement quand il
+ *  visite /account. Ne rend rien, ne bloque rien : un utilisateur non
+ *  connecté ne voit aucun changement de comportement (roomStore.setCloudUser
+ *  reçoit simplement null et roomStore continue de fonctionner en local
+ *  pur, exactement comme avant cet ajout). */
+function CloudSyncBridge() {
+  const { user } = useAuth();
+  useEffect(() => {
+    roomStore.setCloudUser(user?.id ?? null);
+  }, [user?.id]);
+  return null;
+}
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthGate>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <div key="page-root" className="animate-[fade-in_0.18s_ease-out]">
-          <Outlet />
-        </div>
-      </AuthGate>
+      <CloudSyncBridge />
+      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <div key="page-root" className="animate-[fade-in_0.18s_ease-out]">
+        <Outlet />
+      </div>
       <Toaster
         position="top-center"
         theme="dark"
