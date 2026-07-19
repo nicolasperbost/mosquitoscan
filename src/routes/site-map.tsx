@@ -1,14 +1,33 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronLeft, Upload, Download, MapPin, Trash2, Save, Loader2 } from "lucide-react";
+import { ChevronLeft, Upload, Download, MapPin, Trash2, Save, Building2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { BottomNav } from "@/components/BottomNav";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import type { SiteMap, SitePoint, SiteMapKind, DetectionSource } from "@/types/room";
 
 // Leaflet is a browser-only library (touches window/document). Import
 // lazily so SSR / build:dev never executes it.
 import type { Map as LeafletMap, Marker as LeafletMarker } from "leaflet";
+
+// CORRECTIF (lot 9) : suite au durcissement RLS appliqué par l'agent de
+// sécurité Lovable sur `site_maps` (colonne user_id + policies scopées
+// auth.uid() = user_id, lecture anonyme révoquée), cette page était cassée :
+// createNew() insérait sans user_id (violerait désormais la policy
+// d'insertion) et loadMaps() ne filtrait pas explicitement par utilisateur.
+// Comme la table n'accepte plus du tout l'accès anonyme, la page est
+// maintenant réservée aux comptes connectés — ce n'était pas prévu à
+// l'origine (le Volet B était en accès libre), mais c'est la conséquence
+// directe et nécessaire du correctif de sécurité, pas un choix arbitraire.
+//
+// ⚠️ Les plans de site créés AVANT ce correctif ont probablement un
+// user_id NULL en base — ils sont désormais inaccessibles à qui que ce
+// soit via l'app (RLS bloque tout NULL, y compris pour l'auteur d'origine).
+// Ce ne sont pas des données perdues, juste orphelines : un administrateur
+// peut les réattribuer manuellement via une requête SQL du type
+// `UPDATE public.site_maps SET user_id = '<uuid-du-compte>' WHERE user_id IS NULL;`
+// dans l'éditeur SQL Supabase, si nécessaire.
 
 export const Route = createFileRoute("/site-map")({
   head: () => ({
@@ -46,18 +65,26 @@ function downloadBlob(content: string, filename: string, type: string) {
 }
 
 function SiteMapPage() {
+  const { user, loading: authLoading } = useAuth();
   const [maps, setMaps] = useState<SiteMap[]>([]);
   const [selected, setSelected] = useState<SiteMap | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    void loadMaps();
-  }, []);
+    if (user) void loadMaps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const loadMaps = async () => {
+    if (!user) return;
+    // Le filtre explicite ci-dessous est redondant avec la RLS (qui ne
+    // renverrait de toute façon que les lignes de cet utilisateur) mais le
+    // garder rend l'intention explicite dans le code, plutôt que de
+    // dépendre silencieusement du comportement serveur.
     const { data, error } = await supabase
       .from("site_maps")
       .select("*")
+      .eq("user_id", user.id)
       .order("updated_at", { ascending: false });
     if (error) {
       toast.error("Impossible de charger les plans");
@@ -77,17 +104,18 @@ function SiteMapPage() {
   };
 
   const createNew = async (kind: SiteMapKind) => {
+    if (!user) return;
     const name = window.prompt("Nom du plan de site :", kind === "outdoor_geo" ? "Nouveau site (GPS)" : "Nouveau plan intérieur");
     if (!name) return;
     setLoading(true);
     const { data, error } = await supabase
       .from("site_maps")
-      .insert({ name, kind, sensors: [] })
+      .insert({ name, kind, sensors: [], user_id: user.id })
       .select()
       .single();
     setLoading(false);
     if (error || !data) {
-      toast.error("Création impossible");
+      toast.error("Création impossible : " + (error?.message ?? "erreur inconnue"));
       return;
     }
     toast.success("Plan créé");
@@ -110,14 +138,15 @@ function SiteMapPage() {
         sensors: m.sensors as unknown as never,
       })
       .eq("id", m.id);
-    if (error) toast.error("Sauvegarde impossible");
+    if (error) toast.error("Sauvegarde impossible : " + error.message);
     else toast.success("Plan sauvegardé");
     await loadMaps();
   };
 
   const remove = async (id: string) => {
     if (!confirm("Supprimer ce plan ?")) return;
-    await supabase.from("site_maps").delete().eq("id", id);
+    const { error } = await supabase.from("site_maps").delete().eq("id", id);
+    if (error) toast.error("Suppression impossible : " + error.message);
     if (selected?.id === id) setSelected(null);
     await loadMaps();
   };
@@ -153,6 +182,33 @@ function SiteMapPage() {
     }
     toast.success("Exporté");
   };
+
+  if (authLoading) {
+    return <main className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">Chargement…</main>;
+  }
+
+  if (!user) {
+    return (
+      <main className="min-h-screen pb-32 px-4 pt-6 max-w-md mx-auto">
+        <header className="grid grid-cols-3 items-center mb-6">
+          <Link to="/" className="text-muted-foreground hover:text-teal flex items-center gap-1 text-sm">
+            <ChevronLeft size={18} /> Accueil
+          </Link>
+          <h1 className="text-base font-display font-semibold text-center">Plan de site</h1>
+          <span />
+        </header>
+        <section className="glass-panel p-5 text-center">
+          <Building2 size={28} className="mx-auto text-muted-foreground mb-3" />
+          <p className="text-sm font-display mb-2">Réservé aux comptes connectés</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            Les plans de site sont désormais liés à ton compte (renforcement de sécurité) — connecte-toi pour les créer ou les retrouver.
+          </p>
+          <Link to="/account" className="btn-primary inline-block text-sm">Se connecter</Link>
+        </section>
+        <BottomNav />
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen pb-32 px-4 pt-6 max-w-md mx-auto">
@@ -458,7 +514,6 @@ function OutdoorGeoEditor({
       const L = (await import("leaflet")).default;
       await import("leaflet/dist/leaflet.css");
       if (cancelled || !containerRef.current) return;
-      // Fix default icon paths in bundlers
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (L.Icon.Default.prototype as any)._getIconUrl;
       L.Icon.Default.mergeOptions({
@@ -469,7 +524,7 @@ function OutdoorGeoEditor({
       const initial = map.sensors.find((s) => s.lat != null && s.lng != null);
       const center: [number, number] = initial
         ? [initial.lat!, initial.lng!]
-        : [48.8566, 2.3522]; // Paris default
+        : [48.8566, 2.3522];
       const lmap = L.map(containerRef.current).setView(center, initial ? 17 : 5);
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -489,7 +544,6 @@ function OutdoorGeoEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Re-sync markers whenever sensors change
   useEffect(() => {
     if (!ready || !mapRef.current) return;
     (async () => {
