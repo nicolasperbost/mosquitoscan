@@ -1,386 +1,190 @@
-import React from "react";
-import { MapPin, Sliders, Volume2, PlusCircle, Cpu, CheckCircle2, Radio } from "lucide-react";
-import { RiskZone, Device } from "../../types/mosquitoscan";
+import { useState } from "react";
+import { MapPin, PlusCircle, CheckCircle2, Plus, Trash2 } from "lucide-react";
 
-interface ZonesTabProps {
-  zones: RiskZone[];
-  setZones: React.Dispatch<React.SetStateAction<RiskZone[]>>;
-  devices: Device[];
-  selectedZone: RiskZone | null;
-  setSelectedZone: (zone: RiskZone | null) => void;
-  triangulateTarget: { x: number; y: number };
-  setTriangulateTarget: (coords: { x: number; y: number }) => void;
-  isTriangulating: boolean;
-  setIsTriangulating: (val: boolean) => void;
-  triangulateResult: string | null;
-  setTriangulateResult: (val: string | null) => void;
+// CORRECTIF (lot 7 / Phase 2a) : remplace l'original de la maquette Gemini.
+// Changements principaux :
+//  - Les "cônes d'écoute directionnels" (directionAngle/listeningConeWidth)
+//    ont disparu : un micro MEMS omnidirectionnel n'a pas de cône d'écoute.
+//  - La "triangulation" ne prétend plus donner un pourcentage de
+//    correspondance fabriqué ("94%") — cliquer sur le plan sélectionne
+//    simplement la zone la plus proche, présenté honnêtement comme un
+//    outil de repérage, pas une mesure acoustique en temps réel.
+//  - Données réelles (pro_zones du lot 5) au lieu de mockData.ts.
+//  - Thème sombre cohérent avec le reste de l'app.
+
+export type RiskLevel = "critique" | "eleve" | "modere" | "faible";
+
+export interface ZoneView {
+  id: string;
+  name: string;
+  level: RiskLevel;
+  riskFactor: string | null;
+  recommendation: string | null;
+  trapInstalled: boolean;
+  relX: number; // 0..100
+  relY: number; // 0..100
 }
 
-export function ZonesTab({
-  zones,
-  setZones,
-  devices,
-  selectedZone,
-  setSelectedZone,
-  triangulateTarget,
-  setTriangulateTarget,
-  isTriangulating,
-  setIsTriangulating,
-  triangulateResult,
-  setTriangulateResult,
-}: ZonesTabProps) {
+const LEVEL_META: Record<RiskLevel, { label: string; badge: string; text: string; dot: string }> = {
+  critique: { label: "Critique", badge: "rgba(239,68,68,0.15)", text: "var(--red)", dot: "bg-rose-500" },
+  eleve: { label: "Élevé", badge: "rgba(245,158,11,0.15)", text: "#f59e0b", dot: "bg-amber-500" },
+  modere: { label: "Modéré", badge: "rgba(245,197,24,0.12)", text: "var(--amber)", dot: "bg-amber-300" },
+  faible: { label: "Faible", badge: "rgba(0,229,195,0.12)", text: "var(--teal)", dot: "bg-teal-400" },
+};
 
-  // Color functions helpers matching blueprint exactly
-  const getLevelColor = (level: string) => {
-    switch (level) {
-      case "CRITIQUE":
-        return "bg-rose-100 text-rose-800 border-rose-300";
-      case "ÉLEVÉ":
-        return "bg-amber-100 text-amber-800 border-amber-300";
-      case "MODÉRÉ":
-        return "bg-teal-100 text-teal-800 border-teal-300";
-      default:
-        return "bg-slate-100 text-slate-800 border-slate-300";
-    }
-  };
+interface ZonesTabProps {
+  zones: ZoneView[];
+  selectedZone: ZoneView | null;
+  setSelectedZone: (zone: ZoneView | null) => void;
+  onToggleTrap: (zoneId: string, installed: boolean) => void;
+  onAddZone: (relX: number, relY: number) => void;
+  onDeleteZone: (zoneId: string) => void;
+}
 
-  const getUrgencyTextBg = (level: string) => {
-    switch (level) {
-      case "CRITIQUE":
-        return "text-rose-600";
-      case "ÉLEVÉ":
-        return "text-amber-600";
-      case "MODÉRÉ":
-        return "text-teal-600";
-      default:
-        return "text-slate-500";
-    }
-  };
-
-  // Perform geometric distance search to triangulate closest risk zone
-  const handleTriangulate = () => {
-    setIsTriangulating(true);
-    setTriangulateResult(null);
-
-    setTimeout(() => {
-      let closestZone: RiskZone | null = null;
-      let minDistance = Infinity;
-
-      zones.forEach((z) => {
-        const dx = z.coordinates.x - triangulateTarget.x;
-        const dy = z.coordinates.y - triangulateTarget.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < minDistance) {
-          minDistance = dist;
-          closestZone = z;
-        }
-      });
-
-      setIsTriangulating(false);
-      if (closestZone) {
-        setTriangulateResult((closestZone as RiskZone).name);
-        setSelectedZone(closestZone);
-      }
-    }, 1200);
-  };
+export function ZonesTab({ zones, selectedZone, setSelectedZone, onToggleTrap, onAddZone, onDeleteZone }: ZonesTabProps) {
+  const [pendingPoint, setPendingPoint] = useState<{ x: number; y: number } | null>(null);
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 text-left">
-        
-        {/* Left Area: Vector Map & Simulated Triangulation */}
-        <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
-            <div className="space-y-0.5">
-              <span className="text-[10px] text-teal-600 font-bold uppercase block tracking-wider">Cartographie Biologique</span>
-              <h3 className="text-sm font-bold text-slate-800">
-                Localisation des Zones à Risques & Triangulation SNR
-              </h3>
-            </div>
-            <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded font-medium border">
-              💡 Cliquez sur le plan ci-dessous pour déplacer le ciblage bio-acoustique.
-            </span>
-          </div>
+    <div className="space-y-4">
+      {/* Plan */}
+      <div className="glass-panel p-4 space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-[10px] text-teal uppercase tracking-wider font-display">Zones à risque</span>
+          <span className="text-[10px] text-muted-foreground">Tape sur le plan pour ajouter une zone</span>
+        </div>
 
-          {/* Interactive Map Visual Vector Container */}
-          <div className="relative border border-slate-200 bg-slate-950 rounded-2xl aspect-[16/9] w-full overflow-hidden flex items-center justify-center select-none shadow-inner">
-            
-            {/* Blueprint Grid Blueprint Background Lines */}
-            <div className="absolute inset-0 opacity-[0.06] pointer-events-none" 
-              style={{ 
-                backgroundImage: "radial-gradient(#ffffff 1px, transparent 1px), linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)", 
-                backgroundSize: "20px 20px" 
-              }} 
-            />
+        <div
+          className="relative rounded-xl aspect-[16/9] w-full overflow-hidden cursor-crosshair select-none"
+          style={{ background: "rgba(2,6,23,0.6)", border: "1px solid rgba(255,255,255,0.06)" }}
+          onClick={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+            const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+            setPendingPoint({ x, y });
+          }}
+        >
+          <div
+            className="absolute inset-0 opacity-[0.06] pointer-events-none"
+            style={{
+              backgroundImage: "linear-gradient(to right, #fff 1px, transparent 1px), linear-gradient(to bottom, #fff 1px, transparent 1px)",
+              backgroundSize: "20px 20px",
+            }}
+          />
 
-            {/* Click Handler Overlay to change triangulation coordinate targets */}
-            <div 
-              className="absolute inset-0 z-10 cursor-crosshair"
-              onClick={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-                const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-                setTriangulateTarget({ x, y });
-                setTriangulateResult(null);
-              }}
-            />
-
-            {/* Simulated Vector Walls / Pool Representation */}
-            <div className="absolute left-[30%] top-[25%] w-[40%] h-[35%] rounded-full bg-blue-900/10 border border-blue-500/15 pointer-events-none flex items-center justify-center">
-              <span className="text-[9px] text-blue-400 font-mono">BASSIN D'EAU</span>
-            </div>
-            <div className="absolute left-[10%] bottom-[15%] w-[25%] h-[20%] rounded-lg bg-green-950/10 border border-green-700/15 pointer-events-none flex items-center justify-center">
-              <span className="text-[9px] text-green-500 font-mono">SOUS-BOIS NORD</span>
-            </div>
-
-            {/* Risk zones coordinates markers on map */}
-            {zones.map((zone) => (
+          {zones.map((zone) => {
+            const meta = LEVEL_META[zone.level];
+            return (
               <div
                 key={zone.id}
                 onClick={(e) => {
                   e.stopPropagation();
                   setSelectedZone(zone);
-                  setTriangulateTarget(zone.coordinates);
+                  setPendingPoint(null);
                 }}
-                className={`absolute z-20 w-8 h-8 -ml-4 -mt-4 rounded-full flex items-center justify-center cursor-pointer transition-all ${
-                  selectedZone?.id === zone.id
-                    ? "scale-125 border-white shadow-lg shadow-teal-500/20"
-                    : "hover:scale-110"
-                } ${
-                  zone.level === "CRITIQUE"
-                    ? "bg-rose-500 text-white"
-                    : zone.level === "ÉLEVÉ"
-                    ? "bg-amber-500 text-white"
-                    : "bg-teal-500 text-slate-950"
-                }`}
-                style={{ left: `${zone.coordinates.x}%`, top: `${zone.coordinates.y}%` }}
-                title={`${zone.name} (${zone.level})`}
+                className="absolute w-8 h-8 -ml-4 -mt-4 rounded-full flex items-center justify-center cursor-pointer transition-transform"
+                style={{
+                  left: `${zone.relX}%`,
+                  top: `${zone.relY}%`,
+                  background: meta.text,
+                  transform: selectedZone?.id === zone.id ? "scale(1.25)" : undefined,
+                  boxShadow: selectedZone?.id === zone.id ? `0 0 0 2px white` : undefined,
+                }}
+                title={`${zone.name} (${meta.label})`}
               >
-                <span className="text-[9px] font-extrabold font-mono">
-                  {zone.id.replace("zone-", "Z")}
-                </span>
+                <MapPin size={14} className="text-slate-950" />
               </div>
-            ))}
+            );
+          })}
 
-            {/* Connected devices (sensors) positions and direction cones */}
-            {devices.map((dev) => (
-              <div
-                key={dev.id}
-                className="absolute pointer-events-none -ml-3 -mt-3 text-center"
-                style={{ left: `${dev.position.x}%`, top: `${dev.position.y}%` }}
-              >
-                {/* Listening cone */}
-                <div 
-                  className="absolute w-24 h-24 -left-9 -top-9 rounded-full border border-teal-500/10 bg-teal-500/[0.02] transform origin-center opacity-30"
-                  style={{
-                    clipPath: `polygon(50% 50%, 0 0, 100% 0)`,
-                    transform: `rotate(${dev.directionAngle}deg)`
-                  }}
-                />
-                
-                {/* Device circle */}
-                <div className="w-6 h-6 rounded-lg bg-slate-900 border border-teal-400 text-teal-400 flex items-center justify-center relative shadow-md">
-                  <Cpu className="w-3 h-3" />
-                  <span className="absolute -bottom-3 text-[7px] text-teal-300 font-mono font-bold whitespace-nowrap bg-slate-950/80 px-1 rounded border border-slate-800">
-                    {dev.name.split(" ")[0]}
-                  </span>
-                </div>
-              </div>
-            ))}
-
-            {/* Triangulate coordinate target pointer crosshair */}
+          {pendingPoint && (
             <div
-              className="absolute z-20 w-6 h-6 -ml-3 -mt-3 pointer-events-none flex items-center justify-center animate-pulse"
-              style={{ left: `${triangulateTarget.x}%`, top: `${triangulateTarget.y}%` }}
+              className="absolute w-6 h-6 -ml-3 -mt-3 rounded-full border-2 border-dashed border-white/60 flex items-center justify-center animate-pulse"
+              style={{ left: `${pendingPoint.x}%`, top: `${pendingPoint.y}%` }}
             >
-              <div className="w-2 h-2 bg-rose-500 rounded-full border border-white" />
-              <div className="absolute w-6 h-6 rounded-full border-2 border-dashed border-rose-500/60 animate-spin" />
-            </div>
-
-            {/* Active Radar Triangulation Overlay */}
-            {isTriangulating && (
-              <div className="absolute inset-0 z-30 pointer-events-none bg-teal-500/[0.01] overflow-hidden">
-                {/* Sonar sweep centered on crosshair */}
-                <div
-                  className="absolute rounded-full border border-teal-500/10 bg-teal-500/[0.02] -translate-x-1/2 -translate-y-1/2 flex items-center justify-center"
-                  style={{
-                    left: `${triangulateTarget.x}%`,
-                    top: `${triangulateTarget.y}%`,
-                    width: "300%",
-                    height: "300%",
-                    transformOrigin: "center",
-                  }}
-                >
-                  {/* Sweep gradient conic slice */}
-                  <div
-                    className="w-full h-full rounded-full"
-                    style={{
-                      background: "conic-gradient(from 0deg, #00E5C3 0%, rgba(0, 229, 195, 0.08) 12%, transparent 40%, transparent 100%)",
-                      animation: "radar-spin 2.5s linear infinite",
-                    }}
-                  />
-                </div>
-                
-                {/* Concentric expanding wave ripples */}
-                {[0, 0.5, 1.0].map((delay, idx) => (
-                  <div
-                    key={idx}
-                    className="absolute rounded-full border border-teal-400/50 -translate-x-1/2 -translate-y-1/2"
-                    style={{
-                      left: `${triangulateTarget.x}%`,
-                      top: `${triangulateTarget.y}%`,
-                      width: "10px",
-                      height: "10px",
-                      animation: "map-ping-expand 2s cubic-bezier(0.1, 0.8, 0.3, 1) infinite",
-                      animationDelay: `${delay}s`,
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-            <style>{`
-              @keyframes radar-spin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-              }
-              @keyframes map-ping-expand {
-                0% {
-                  width: 0px;
-                  height: 0px;
-                  opacity: 0.9;
-                }
-                100% {
-                  width: 320px;
-                  height: 320px;
-                  opacity: 0;
-                }
-              }
-            `}</style>
-          </div>
-
-          {/* Map Footer: Interactive action buttons to process simulation */}
-          <div className="flex flex-col sm:flex-row justify-between items-center bg-slate-50 border p-3 rounded-xl gap-3 text-xs">
-            <div className="space-y-0.5 text-left">
-              <span className="text-[10px] text-slate-400 font-bold uppercase block">Ciblage bio-acoustique actuel</span>
-              <strong className="text-slate-700 font-mono">
-                X: {triangulateTarget.x}% / Y: {triangulateTarget.y}%
-              </strong>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={handleTriangulate}
-                disabled={isTriangulating}
-                className="px-4 py-2 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white rounded-xl font-bold font-mono text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
-                style={{ animation: "pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite" }}
-              >
-                <Radio className={`w-4 h-4 ${isTriangulating ? "animate-spin" : "animate-pulse"}`} />
-                {isTriangulating ? "Mesure en cours..." : "Déclencher la mesure radar"}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Area: Risk Zone Details & Intervention Prescription */}
-        <div className="lg:col-span-4 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-4">
-          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide border-b border-slate-100 pb-2">
-            Fiche Diagnostic de Zone
-          </h3>
-
-          {selectedZone ? (
-            <div className="space-y-4">
-              <div className="flex justify-between items-start gap-2">
-                <div className="space-y-0.5">
-                  <span className="text-[8px] text-slate-400 font-bold uppercase">Nom de l'espace ciblé</span>
-                  <h4 className="text-xs font-bold text-slate-800 leading-tight">{selectedZone.name}</h4>
-                </div>
-                <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border uppercase shrink-0 ${getLevelColor(selectedZone.level)}`}>
-                  {selectedZone.level}
-                </span>
-              </div>
-
-              {/* Stagnant water scale indicators */}
-              <div className="bg-slate-50 border border-slate-100 rounded-xl p-3 space-y-2">
-                <div className="flex justify-between text-[11px] text-slate-500 font-bold">
-                  <span>Facteur Eau Stagnante :</span>
-                  <span className={`${getUrgencyTextBg(selectedZone.level)}`}>{selectedZone.stagnantWaterScore}/10</span>
-                </div>
-                <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full ${
-                      selectedZone.stagnantWaterScore > 7
-                        ? "bg-rose-500"
-                        : selectedZone.stagnantWaterScore > 4
-                        ? "bg-amber-500"
-                        : "bg-teal-500"
-                    }`}
-                    style={{ width: `${selectedZone.stagnantWaterScore * 10}%` }}
-                  />
-                </div>
-                <span className="block text-[10px] text-slate-400 leading-tight">
-                  Risque principal : <strong className="text-slate-600">{selectedZone.riskFactor}</strong>
-                </span>
-              </div>
-
-              {/* Expert clinical recommendations */}
-              <div className="space-y-1">
-                <span className="text-[9px] text-slate-400 font-bold uppercase block tracking-wider">Prescription de traitement préconisé</span>
-                <p className="text-xs text-slate-600 leading-relaxed font-mono bg-amber-50/60 border border-amber-200/50 p-3 rounded-lg">
-                  {selectedZone.recommandation}
-                </p>
-              </div>
-
-              {/* State control trap toggle */}
-              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Dispositif Physique</span>
-                  <span className="text-xs text-slate-700 font-semibold">
-                    {selectedZone.trapInstalled ? "✓ Piège CO2 raccordé" : "Aucun piège associé"}
-                  </span>
-                </div>
-
-                <button
-                  onClick={() => {
-                    setZones((prev) =>
-                      prev.map((z) =>
-                        z.id === selectedZone.id
-                          ? { ...z, trapInstalled: !z.trapInstalled }
-                          : z
-                      )
-                    );
-                    setSelectedZone({
-                      ...selectedZone,
-                      trapInstalled: !selectedZone.trapInstalled,
-                    });
-                  }}
-                  className={`px-3 py-1.5 text-[10px] font-extrabold rounded-lg uppercase tracking-wider cursor-pointer transition-colors ${
-                    selectedZone.trapInstalled
-                      ? "bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200"
-                      : "bg-teal-600 hover:bg-teal-500 text-white"
-                  }`}
-                >
-                  {selectedZone.trapInstalled ? "Déposer" : "Installer piège"}
-                </button>
-              </div>
-
-              {triangulateResult && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs flex gap-2 animate-scaleUp">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-                  <div className="space-y-0.5 text-left">
-                    <span className="block text-[9px] text-emerald-800 font-bold uppercase">Résultat de la Triangulation</span>
-                    <p className="text-emerald-700 leading-relaxed font-semibold">
-                      Le signal concorde à 94% avec l'empreinte de la zone : <strong className="underline">{triangulateResult}</strong>.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="text-center py-12 text-slate-400 text-xs">
-              Sélectionnez une zone sur la carte pour consulter les diagnostics B2B.
+              <div className="w-2 h-2 bg-white rounded-full" />
             </div>
           )}
         </div>
+
+        {pendingPoint && (
+          <button
+            onClick={() => {
+              onAddZone(pendingPoint.x, pendingPoint.y);
+              setPendingPoint(null);
+            }}
+            className="btn-primary w-full text-xs flex items-center justify-center gap-1.5"
+          >
+            <Plus size={14} /> Ajouter une zone ici (X:{pendingPoint.x}% Y:{pendingPoint.y}%)
+          </button>
+        )}
+      </div>
+
+      {/* Zone detail */}
+      <div className="glass-panel p-4">
+        <h3 className="text-xs font-display uppercase tracking-wide border-b border-white/5 pb-2 mb-3">
+          Fiche de zone
+        </h3>
+
+        {selectedZone ? (
+          <div className="space-y-3 text-xs">
+            <div className="flex justify-between items-start gap-2">
+              <h4 className="font-display">{selectedZone.name}</h4>
+              <span
+                className="px-2 py-0.5 text-[9px] font-bold rounded-full uppercase shrink-0"
+                style={{ background: LEVEL_META[selectedZone.level].badge, color: LEVEL_META[selectedZone.level].text }}
+              >
+                {LEVEL_META[selectedZone.level].label}
+              </span>
+            </div>
+
+            {selectedZone.riskFactor && (
+              <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)" }}>
+                <span className="text-muted-foreground">Facteur de risque : </span>
+                <strong>{selectedZone.riskFactor}</strong>
+              </div>
+            )}
+
+            {selectedZone.recommendation && (
+              <div>
+                <span className="text-[9px] text-muted-foreground uppercase block tracking-wider mb-1">Recommandation</span>
+                <p
+                  className="leading-relaxed p-3 rounded-lg"
+                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}
+                >
+                  {selectedZone.recommendation}
+                </p>
+              </div>
+            )}
+
+            <div className="p-3 rounded-xl flex items-center justify-between" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <div>
+                <span className="text-[10px] text-muted-foreground block uppercase">Dispositif</span>
+                <span>{selectedZone.trapInstalled ? "✓ Piège installé" : "Aucun piège"}</span>
+              </div>
+              <button
+                onClick={() => onToggleTrap(selectedZone.id, !selectedZone.trapInstalled)}
+                className="px-3 py-1.5 text-[10px] font-bold rounded-lg uppercase tracking-wider"
+                style={{
+                  background: selectedZone.trapInstalled ? "rgba(239,68,68,0.15)" : "var(--teal)",
+                  color: selectedZone.trapInstalled ? "var(--red)" : "#0A0F1E",
+                }}
+              >
+                {selectedZone.trapInstalled ? "Retirer" : "Installer"}
+              </button>
+            </div>
+
+            <button
+              onClick={() => onDeleteZone(selectedZone.id)}
+              className="w-full flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground hover:text-red-500 py-1"
+            >
+              <Trash2 size={12} /> Supprimer cette zone
+            </button>
+          </div>
+        ) : (
+          <p className="text-center text-xs text-muted-foreground py-8">
+            Sélectionne une zone sur le plan pour voir son détail.
+          </p>
+        )}
       </div>
     </div>
   );
