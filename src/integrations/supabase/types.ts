@@ -21,6 +21,7 @@ export type Database = {
           id: string
           image_count: number
           status: string
+          user_id: string | null
         }
         Insert: {
           created_at?: string
@@ -28,6 +29,7 @@ export type Database = {
           id?: string
           image_count?: number
           status?: string
+          user_id?: string | null
         }
         Update: {
           created_at?: string
@@ -35,6 +37,7 @@ export type Database = {
           id?: string
           image_count?: number
           status?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -47,6 +50,7 @@ export type Database = {
           name: string
           sensors: Json
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           background_image_url?: string | null
@@ -56,6 +60,7 @@ export type Database = {
           name: string
           sensors?: Json
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           background_image_url?: string | null
@@ -65,6 +70,7 @@ export type Database = {
           name?: string
           sensors?: Json
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
