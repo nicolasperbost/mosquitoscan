@@ -13,6 +13,8 @@ import { fetchCurrentWeather, computeRiskScore, computeHealthScore, riskLevelFro
 import type { DetectionEvent } from "@/types/room";
 import { SitesTab, type SiteView, type TimelineItem } from "@/components/mosquitoscan/SitesTab";
 import { ZonesTab, type ZoneView, type RiskLevel } from "@/components/mosquitoscan/ZonesTab";
+import { RapportsTab, type ReportExportType } from "@/components/mosquitoscan/RapportsTab";
+import { OnboardingWizard } from "@/components/mosquitoscan/OnboardingWizard";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/pro")({
@@ -59,6 +61,14 @@ function ProDashboardPage() {
   const [showAddIntervention, setShowAddIntervention] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportType, setExportType] = useState<ReportExportType>("intervention");
+
+  const ONBOARDING_KEY = "mosquito_pro_onboarding_completed";
+  const [showOnboarding, setShowOnboarding] = useState(() => typeof window !== "undefined" && localStorage.getItem(ONBOARDING_KEY) !== "true");
+  const [onboardingStep, setOnboardingStep] = useState(1);
+  const setOnboardingCompleted = (v: boolean) => {
+    if (v && typeof window !== "undefined") localStorage.setItem(ONBOARDING_KEY, "true");
+  };
 
   // ─── Data loading ─────────────────────────────────────────────────────
   const loadSites = async () => {
@@ -254,6 +264,16 @@ function ProDashboardPage() {
         <span />
       </header>
 
+      <div className="mb-4">
+        <OnboardingWizard
+          showOnboarding={showOnboarding}
+          setShowOnboarding={setShowOnboarding}
+          onboardingStep={onboardingStep}
+          setOnboardingStep={setOnboardingStep}
+          setOnboardingCompleted={(v) => { setOnboardingCompleted(v); setShowOnboarding(!v); }}
+        />
+      </div>
+
       <div className="flex gap-1 mb-4 glass-panel p-1 text-[11px] overflow-x-auto no-scrollbar">
         {([
           { key: "sites", label: "Sites", Icon: Building2 },
@@ -345,11 +365,16 @@ function ProDashboardPage() {
       )}
 
       {tab === "rapports" && (
-        !selectedSiteId ? (
+        !selectedSiteId || !currentSiteView ? (
           <p className="text-center text-xs text-muted-foreground py-10">Sélectionne d'abord un site dans l'onglet Sites.</p>
         ) : (
           <>
-            <section className="glass-panel p-4 mb-3">
+            <RapportsTab
+              currentSiteName={currentSiteView.name}
+              detections={detections}
+              triggerExport={(type) => { setExportType(type); setShowExport(true); }}
+            />
+            <section className="glass-panel p-4 mt-3">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-display">Journal d'interventions</span>
                 <button onClick={() => setShowAddIntervention(true)} className="text-teal text-xs flex items-center gap-1">
@@ -372,9 +397,6 @@ function ProDashboardPage() {
                 </ul>
               )}
             </section>
-            <button onClick={() => setShowExport(true)} className="btn-primary w-full flex items-center justify-center gap-2 text-sm">
-              <FileText size={15} /> Générer le rapport d'intervention
-            </button>
           </>
         )
       )}
@@ -390,6 +412,7 @@ function ProDashboardPage() {
       {showAddIntervention && <AddInterventionModal onClose={() => setShowAddIntervention(false)} onSubmit={addIntervention} />}
       {showExport && currentSiteView && (
         <ExportReportModal
+          type={exportType}
           site={currentSiteView}
           zones={zoneViews}
           interventions={interventionRows}
@@ -492,10 +515,16 @@ function AddInterventionModal({ onClose, onSubmit }: { onClose: () => void; onSu
   );
 }
 
+const REPORT_TITLES: Record<ReportExportType, string> = {
+  intervention: "Rapport d'intervention",
+  vigilance: "Bilan de vigilance acoustique",
+  client: "Résumé d'activité pour le client",
+};
+
 function ExportReportModal({
-  site, zones, interventions, detections, exporting, setExporting, onClose,
+  type, site, zones, interventions, detections, exporting, setExporting, onClose,
 }: {
-  site: SiteView; zones: ZoneView[]; interventions: ProInterventionRow[]; detections: DetectionEvent[];
+  type: ReportExportType; site: SiteView; zones: ZoneView[]; interventions: ProInterventionRow[]; detections: DetectionEvent[];
   exporting: boolean; setExporting: (v: boolean) => void; onClose: () => void;
 }) {
   const [ready, setReady] = useState(false);
@@ -518,12 +547,12 @@ function ExportReportModal({
       ) : (
         <div>
           <div className="flex justify-between items-center mb-3">
-            <h3 className="font-display text-sm flex items-center gap-2"><ShieldAlert size={15} className="text-teal" /> Rapport d'intervention</h3>
+            <h3 className="font-display text-sm flex items-center gap-2"><ShieldAlert size={15} className="text-teal" /> {REPORT_TITLES[type]}</h3>
             <button onClick={onClose}><X size={15} className="text-muted-foreground" /></button>
           </div>
           <div className="bg-black/20 rounded-lg p-3 text-[11px] font-mono-x space-y-1.5">
             <div className="text-center border-b border-dashed border-white/10 pb-2 mb-2">
-              <div className="font-bold uppercase">Rapport d'intervention — MosquitoRadar</div>
+              <div className="font-bold uppercase">{REPORT_TITLES[type]} — MosquitoRadar</div>
               <div className="text-[9px] text-muted-foreground">Document généré, à valider par un professionnel — ne constitue pas un certificat de conformité sanitaire</div>
             </div>
             <div><strong>Site :</strong> {site.name}</div>
