@@ -15,6 +15,16 @@ import { Toaster } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { roomStore } from "@/lib/roomStore";
 
+// CORRECTIF (lot 6) : le faux AuthGate.tsx (login localStorage, mot de passe
+// accepté à partir de 4 caractères, quel que soit le compte) englobait TOUTE
+// l'app, y compris /detection /history /settings qui doivent rester en
+// accès libre. Il est retiré ici. L'authentification réelle (Supabase, via
+// useAuth du lot 4) ne s'applique désormais qu'aux pages qui en ont
+// vraiment besoin (/pro), pas à l'app entière.
+//
+// ⚠️ Fichier à supprimer du repo une fois ce correctif appliqué :
+// src/components/AuthGate.tsx (plus aucune référence ne doit y pointer).
+
 function NotFoundComponent() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -126,12 +136,11 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-/** AJOUT (socle comptes/sync cloud) — active la synchronisation cloud pour
- *  TOUTE l'app dès qu'un utilisateur est connecté, pas seulement quand il
- *  visite /account. Ne rend rien, ne bloque rien : un utilisateur non
- *  connecté ne voit aucun changement de comportement (roomStore.setCloudUser
- *  reçoit simplement null et roomStore continue de fonctionner en local
- *  pur, exactement comme avant cet ajout). */
+/** Lot 4 — active la synchronisation cloud pour toute l'app dès qu'un
+ *  utilisateur Supabase réel est connecté. Ne rend rien, ne bloque rien :
+ *  un visiteur non connecté ne voit aucun changement (roomStore continue de
+ *  fonctionner en local pur). Ceci remplace le faux AuthGate qui bloquait
+ *  tout l'accès derrière un login fictif. */
 function CloudSyncBridge() {
   const { user } = useAuth();
   useEffect(() => {
