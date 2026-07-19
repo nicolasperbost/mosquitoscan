@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BottomNav } from "@/components/BottomNav";
 import {
-  ChevronLeft, Building2, MapPin, Bell, FileText, Plus, Thermometer, Droplets,
-  ShieldAlert, Check, X, Printer, Loader2, Trash2,
+  ChevronLeft, Building2, MapPin, Bell, FileText, Thermometer, Droplets,
+  ShieldAlert, Check, X, Printer, Loader2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
@@ -11,6 +11,8 @@ import { supabase } from "@/integrations/supabase/client";
 import { categoryFromSpeciesHint } from "@/lib/spectralAnalysis";
 import { fetchCurrentWeather, computeRiskScore, computeHealthScore, riskLevelFromScore, type WeatherSnapshot } from "@/lib/weather";
 import type { DetectionEvent } from "@/types/room";
+import { SitesTab, type SiteView, type TimelineItem } from "@/components/mosquitoscan/SitesTab";
+import { ZonesTab, type ZoneView, type RiskLevel } from "@/components/mosquitoscan/ZonesTab";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/pro")({
@@ -23,62 +25,19 @@ export const Route = createFileRoute("/pro")({
   component: ProDashboardPage,
 });
 
-// ─── Types (mirrors the pro_* tables) ──────────────────────────────────────
-interface ProSite {
-  id: string;
-  name: string;
-  client_name: string | null;
-  address: string | null;
-  lat: number | null;
-  lng: number | null;
-  active_traps: number;
-  last_inspection: string | null;
+// ─── DB row shapes (pro_sites / pro_zones / pro_interventions, lot 5) ──────
+interface ProSiteRow {
+  id: string; name: string; client_name: string | null; address: string | null;
+  lat: number | null; lng: number | null; active_traps: number; last_inspection: string | null;
 }
-
-interface ProZone {
-  id: string;
-  site_id: string;
-  name: string;
-  risk_level: "critique" | "eleve" | "modere" | "faible";
-  risk_factor: string | null;
-  recommendation: string | null;
-  trap_installed: boolean;
+interface ProZoneRow {
+  id: string; site_id: string; name: string; risk_level: RiskLevel;
+  risk_factor: string | null; recommendation: string | null; trap_installed: boolean;
+  rel_x: number | null; rel_y: number | null;
 }
-
-interface ProIntervention {
-  id: string;
-  site_id: string;
-  type: "treatment" | "inspection" | "sensor" | "note";
-  title: string;
-  description: string | null;
-  operator: string | null;
-  created_at: string;
-}
-
-const RISK_META: Record<ProZone["risk_level"], { label: string; color: string }> = {
-  critique: { label: "Critique", color: "var(--red)" },
-  eleve: { label: "Élevé", color: "#f59e0b" },
-  modere: { label: "Modéré", color: "var(--amber)" },
-  faible: { label: "Faible", color: "var(--teal)" },
-};
-
-function periodFromDate(d: Date): "Matin" | "Après-midi" | "Soir" | "Nuit" {
-  const h = d.getHours();
-  if (h >= 6 && h < 12) return "Matin";
-  if (h >= 12 && h < 18) return "Après-midi";
-  if (h >= 18 && h < 23) return "Soir";
-  return "Nuit";
-}
-
-function relativeTimeLabel(d: Date): string {
-  const diffMs = Date.now() - d.getTime();
-  const mins = Math.round(diffMs / 60000);
-  if (mins < 1) return "À l'instant";
-  if (mins < 60) return `Il y a ${mins} min`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `Il y a ${hours} h`;
-  const days = Math.round(hours / 24);
-  return `Il y a ${days} j`;
+interface ProInterventionRow {
+  id: string; site_id: string; type: "treatment" | "inspection" | "sensor" | "note";
+  title: string; description: string | null; operator: string | null; created_at: string;
 }
 
 function ProDashboardPage() {
@@ -86,20 +45,20 @@ function ProDashboardPage() {
   const detections = useRoomStore((s) => s.detections);
 
   const [tab, setTab] = useState<"sites" | "zones" | "alertes" | "rapports">("sites");
-  const [sites, setSites] = useState<ProSite[]>([]);
+  const [siteRows, setSiteRows] = useState<ProSiteRow[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
-  const [zones, setZones] = useState<ProZone[]>([]);
-  const [interventions, setInterventions] = useState<ProIntervention[]>([]);
+  const [zoneRows, setZoneRows] = useState<ProZoneRow[]>([]);
+  const [interventionRows, setInterventionRows] = useState<ProInterventionRow[]>([]);
   const [weatherBySite, setWeatherBySite] = useState<Record<string, WeatherSnapshot | null>>({});
   const [loadingSites, setLoadingSites] = useState(false);
 
   const [showAddSite, setShowAddSite] = useState(false);
   const [showAddZone, setShowAddZone] = useState(false);
+  const [pendingZonePos, setPendingZonePos] = useState<{ x: number; y: number } | null>(null);
+  const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null);
   const [showAddIntervention, setShowAddIntervention] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [exporting, setExporting] = useState(false);
-
-  const selectedSite = sites.find((s) => s.id === selectedSiteId) ?? null;
 
   // ─── Data loading ─────────────────────────────────────────────────────
   const loadSites = async () => {
@@ -107,7 +66,7 @@ function ProDashboardPage() {
     setLoadingSites(true);
     const { data, error } = await supabase.from("pro_sites").select("*").order("created_at", { ascending: false });
     if (error) toast.error("Échec du chargement des sites : " + error.message);
-    setSites(data ?? []);
+    setSiteRows(data ?? []);
     if (!selectedSiteId && data && data.length > 0) setSelectedSiteId(data[0].id);
     setLoadingSites(false);
   };
@@ -119,14 +78,10 @@ function ProDashboardPage() {
 
   useEffect(() => {
     if (!selectedSiteId) return;
-    supabase
-      .from("pro_zones")
-      .select("*")
-      .eq("site_id", selectedSiteId)
-      .then(({ data, error }) => {
-        if (error) toast.error("Échec du chargement des zones : " + error.message);
-        setZones(data ?? []);
-      });
+    supabase.from("pro_zones").select("*").eq("site_id", selectedSiteId).then(({ data, error }) => {
+      if (error) toast.error("Échec du chargement des zones : " + error.message);
+      setZoneRows(data ?? []);
+    });
     supabase
       .from("pro_interventions")
       .select("*")
@@ -134,34 +89,63 @@ function ProDashboardPage() {
       .order("created_at", { ascending: false })
       .then(({ data, error }) => {
         if (error) toast.error("Échec du chargement des interventions : " + error.message);
-        setInterventions(data ?? []);
+        setInterventionRows(data ?? []);
       });
   }, [selectedSiteId]);
 
-  // Fetch real weather once per site that has coordinates
   useEffect(() => {
-    for (const site of sites) {
+    for (const site of siteRows) {
       if (site.lat == null || site.lng == null) continue;
       if (weatherBySite[site.id] !== undefined) continue;
-      fetchCurrentWeather(site.lat, site.lng).then((w) => {
-        setWeatherBySite((prev) => ({ ...prev, [site.id]: w }));
-      });
+      fetchCurrentWeather(site.lat, site.lng).then((w) => setWeatherBySite((prev) => ({ ...prev, [site.id]: w })));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sites]);
+  }, [siteRows]);
 
-  // ─── Real risk/health score per site ─────────────────────────────────
+  // ─── Real risk/health per site ─────────────────────────────────────────
   const recentHighConfidenceCount = useMemo(() => {
     const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
     return detections.filter((d) => d.confidence > 70 && new Date(d.timestamp).getTime() > weekAgo).length;
   }, [detections]);
 
-  const scoreForSite = (site: ProSite) => {
-    const weather = weatherBySite[site.id] ?? null;
-    const risk = computeRiskScore(weather, recentHighConfidenceCount);
-    const health = computeHealthScore(risk);
-    return { risk, health, weather };
-  };
+  const siteViews: SiteView[] = useMemo(
+    () =>
+      siteRows.map((s) => {
+        const weather = weatherBySite[s.id] ?? null;
+        const risk = computeRiskScore(weather, recentHighConfidenceCount);
+        return {
+          id: s.id, name: s.name, clientName: s.client_name, address: s.address,
+          activeTraps: s.active_traps, lastInspection: s.last_inspection,
+          riskScore: risk, healthScore: computeHealthScore(risk), weather,
+        };
+      }),
+    [siteRows, weatherBySite, recentHighConfidenceCount],
+  );
+  const currentSiteView = siteViews.find((s) => s.id === selectedSiteId) ?? null;
+
+  const timelineItems: TimelineItem[] = useMemo(
+    () =>
+      interventionRows.map((it) => ({
+        id: it.id,
+        timestamp: new Date(it.created_at).toLocaleString("fr-FR"),
+        type: it.type,
+        title: it.title,
+        description: it.description,
+        operator: it.operator,
+      })),
+    [interventionRows],
+  );
+
+  const zoneViews: ZoneView[] = useMemo(
+    () =>
+      zoneRows.map((z) => ({
+        id: z.id, name: z.name, level: z.risk_level, riskFactor: z.risk_factor,
+        recommendation: z.recommendation, trapInstalled: z.trap_installed,
+        relX: z.rel_x ?? 50, relY: z.rel_y ?? 50,
+      })),
+    [zoneRows],
+  );
+  const selectedZoneView = zoneViews.find((z) => z.id === selectedZoneId) ?? null;
 
   // ─── Mutations ─────────────────────────────────────────────────────────
   const addSite = async (form: { name: string; client_name: string; address: string; lat: string; lng: string }) => {
@@ -169,89 +153,75 @@ function ProDashboardPage() {
     const { data, error } = await supabase
       .from("pro_sites")
       .insert({
-        user_id: user.id,
-        name: form.name,
-        client_name: form.client_name || null,
-        address: form.address || null,
-        lat: form.lat ? parseFloat(form.lat) : null,
-        lng: form.lng ? parseFloat(form.lng) : null,
+        user_id: user.id, name: form.name, client_name: form.client_name || null, address: form.address || null,
+        lat: form.lat ? parseFloat(form.lat) : null, lng: form.lng ? parseFloat(form.lng) : null,
       })
-      .select()
-      .single();
-    if (error) {
-      toast.error("Échec de la création : " + error.message);
-      return;
-    }
-    setSites((prev) => [data, ...prev]);
+      .select().single();
+    if (error) { toast.error("Échec de la création : " + error.message); return; }
+    setSiteRows((prev) => [data, ...prev]);
     setSelectedSiteId(data.id);
     setShowAddSite(false);
     toast.success("Site créé");
   };
 
-  const addZone = async (form: { name: string; risk_level: ProZone["risk_level"]; risk_factor: string; recommendation: string; trap_installed: boolean }) => {
-    if (!user || !selectedSiteId) return;
+  const addZone = async (form: { name: string; risk_level: RiskLevel; risk_factor: string; recommendation: string }) => {
+    if (!user || !selectedSiteId || !pendingZonePos) return;
     const { data, error } = await supabase
       .from("pro_zones")
-      .insert({ user_id: user.id, site_id: selectedSiteId, ...form })
-      .select()
-      .single();
-    if (error) {
-      toast.error("Échec de la création : " + error.message);
-      return;
-    }
-    setZones((prev) => [data, ...prev]);
+      .insert({
+        user_id: user.id, site_id: selectedSiteId, trap_installed: false,
+        rel_x: pendingZonePos.x, rel_y: pendingZonePos.y, ...form,
+      })
+      .select().single();
+    if (error) { toast.error("Échec de la création : " + error.message); return; }
+    setZoneRows((prev) => [data, ...prev]);
     setShowAddZone(false);
+    setPendingZonePos(null);
     toast.success("Zone ajoutée");
   };
 
-  const deleteZone = async (id: string) => {
-    const { error } = await supabase.from("pro_zones").delete().eq("id", id);
-    if (error) {
-      toast.error("Échec de la suppression : " + error.message);
-      return;
-    }
-    setZones((prev) => prev.filter((z) => z.id !== id));
+  const toggleTrap = async (zoneId: string, installed: boolean) => {
+    const { error } = await supabase.from("pro_zones").update({ trap_installed: installed }).eq("id", zoneId);
+    if (error) { toast.error("Échec de la mise à jour : " + error.message); return; }
+    setZoneRows((prev) => prev.map((z) => (z.id === zoneId ? { ...z, trap_installed: installed } : z)));
   };
 
-  const addIntervention = async (form: { type: ProIntervention["type"]; title: string; description: string; operator: string }) => {
+  const deleteZone = async (zoneId: string) => {
+    const { error } = await supabase.from("pro_zones").delete().eq("id", zoneId);
+    if (error) { toast.error("Échec de la suppression : " + error.message); return; }
+    setZoneRows((prev) => prev.filter((z) => z.id !== zoneId));
+    if (selectedZoneId === zoneId) setSelectedZoneId(null);
+  };
+
+  const addIntervention = async (form: { type: ProInterventionRow["type"]; title: string; description: string; operator: string }) => {
     if (!user || !selectedSiteId) return;
     const { data, error } = await supabase
       .from("pro_interventions")
       .insert({ user_id: user.id, site_id: selectedSiteId, ...form })
-      .select()
-      .single();
-    if (error) {
-      toast.error("Échec de l'ajout : " + error.message);
-      return;
-    }
-    setInterventions((prev) => [data, ...prev]);
+      .select().single();
+    if (error) { toast.error("Échec de l'ajout : " + error.message); return; }
+    setInterventionRows((prev) => [data, ...prev]);
     setShowAddIntervention(false);
     toast.success("Intervention enregistrée");
   };
 
-  // ─── Alerts (real DetectionEvent feed, enriched) ──────────────────────
+  // ─── Alerts (real DetectionEvent feed) ────────────────────────────────
   const [filterPeriod, setFilterPeriod] = useState<string>("all");
-  const [filterCategory, setFilterCategory] = useState<string>("all");
-
   const enrichedAlerts = useMemo(() => {
+    const periodOf = (d: Date) => {
+      const h = d.getHours();
+      if (h >= 6 && h < 12) return "Matin";
+      if (h >= 12 && h < 18) return "Après-midi";
+      if (h >= 18 && h < 23) return "Soir";
+      return "Nuit";
+    };
     return detections
-      .map((d) => ({
-        ...d,
-        period: periodFromDate(new Date(d.timestamp)),
-        relativeLabel: relativeTimeLabel(new Date(d.timestamp)),
-        category: categoryFromSpeciesHint(d.speciesHint),
-      }))
-      .filter((d) => filterPeriod === "all" || d.period === filterPeriod)
-      .filter((d) => filterCategory === "all" || d.category === filterCategory);
-  }, [detections, filterPeriod, filterCategory]);
+      .map((d) => ({ ...d, period: periodOf(new Date(d.timestamp)) }))
+      .filter((d) => filterPeriod === "all" || d.period === filterPeriod);
+  }, [detections, filterPeriod]);
 
-  // ─── Not signed in: this dashboard is inherently account-based ───────
   if (authLoading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
-        Chargement…
-      </main>
-    );
+    return <main className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">Chargement…</main>;
   }
   if (!user) {
     return (
@@ -266,9 +236,7 @@ function ProDashboardPage() {
         <section className="glass-panel p-5 text-center">
           <Building2 size={28} className="mx-auto text-muted-foreground mb-3" />
           <p className="text-sm font-display mb-2">Réservé aux comptes connectés</p>
-          <p className="text-xs text-muted-foreground mb-4">
-            Le tableau de bord pro gère plusieurs sites/clients — il nécessite un compte pour associer les données à toi.
-          </p>
+          <p className="text-xs text-muted-foreground mb-4">Le tableau de bord pro gère plusieurs sites/clients — il nécessite un compte.</p>
           <Link to="/account" className="btn-primary inline-block text-sm">Se connecter</Link>
         </section>
         <BottomNav />
@@ -286,7 +254,6 @@ function ProDashboardPage() {
         <span />
       </header>
 
-      {/* Tabs */}
       <div className="flex gap-1 mb-4 glass-panel p-1 text-[11px] overflow-x-auto no-scrollbar">
         {([
           { key: "sites", label: "Sites", Icon: Building2 },
@@ -298,114 +265,44 @@ function ProDashboardPage() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className="flex-1 py-1.5 rounded-md transition font-display flex items-center justify-center gap-1 whitespace-nowrap px-2"
-            style={{
-              background: tab === t.key ? "var(--teal)" : "transparent",
-              color: tab === t.key ? "#0A0F1E" : "var(--muted-foreground)",
-            }}
+            style={{ background: tab === t.key ? "var(--teal)" : "transparent", color: tab === t.key ? "#0A0F1E" : "var(--muted-foreground)" }}
           >
             <t.Icon size={12} /> {t.label}
           </button>
         ))}
       </div>
 
-      {/* ─── SITES TAB ─── */}
       {tab === "sites" && (
-        <>
-          <button onClick={() => setShowAddSite(true)} className="btn-primary w-full mb-3 flex items-center justify-center gap-2 text-sm">
-            <Plus size={15} /> Nouveau site
-          </button>
-          {loadingSites ? (
-            <div className="text-center py-10 text-muted-foreground text-sm">Chargement…</div>
-          ) : sites.length === 0 ? (
-            <p className="text-center text-xs text-muted-foreground py-10">Aucun site — crée le premier ci-dessus.</p>
-          ) : (
-            <ul className="space-y-2">
-              {sites.map((site) => {
-                const { risk, health, weather } = scoreForSite(site);
-                const isSelected = site.id === selectedSiteId;
-                return (
-                  <li
-                    key={site.id}
-                    onClick={() => setSelectedSiteId(site.id)}
-                    className="glass-panel p-4 cursor-pointer"
-                    style={isSelected ? { borderColor: "var(--teal)" } : undefined}
-                  >
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <div className="font-display text-sm">{site.name}</div>
-                        {site.client_name && <div className="text-[11px] text-muted-foreground">{site.client_name}</div>}
-                      </div>
-                      <div className="text-right">
-                        <div className="font-mono-x text-lg" style={{ color: RISK_META[riskLevelFromScore(risk)].color }}>
-                          {risk}
-                        </div>
-                        <div className="text-[9px] text-muted-foreground uppercase">Risque</div>
-                      </div>
-                    </div>
-                    {site.address && <div className="text-[11px] text-muted-foreground mb-2">{site.address}</div>}
-                    <div className="flex gap-3 text-[10px] text-muted-foreground">
-                      <span>Santé du site : {health}/100</span>
-                      {weather && (
-                        <span className="flex items-center gap-2">
-                          <Thermometer size={10} /> {weather.temperatureC.toFixed(0)}°C
-                          <Droplets size={10} /> {weather.humidityPercent.toFixed(0)}%
-                        </span>
-                      )}
-                      {!weather && site.lat == null && <span>Ajoute des coordonnées GPS pour la météo réelle</span>}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </>
+        loadingSites ? (
+          <div className="text-center py-10 text-muted-foreground text-sm">Chargement…</div>
+        ) : (
+          <SitesTab
+            sites={siteViews}
+            selectedSiteId={selectedSiteId}
+            setSelectedSiteId={setSelectedSiteId}
+            currentSite={currentSiteView}
+            timeline={timelineItems}
+            onAddSite={() => setShowAddSite(true)}
+            onExportClient={() => setShowExport(true)}
+          />
+        )
       )}
 
-      {/* ─── ZONES TAB ─── */}
       {tab === "zones" && (
-        <>
-          {!selectedSite ? (
-            <p className="text-center text-xs text-muted-foreground py-10">Sélectionne d'abord un site dans l'onglet Sites.</p>
-          ) : (
-            <>
-              <div className="text-[11px] text-muted-foreground mb-3">Zones de <strong className="text-foreground">{selectedSite.name}</strong></div>
-              <button onClick={() => setShowAddZone(true)} className="btn-primary w-full mb-3 flex items-center justify-center gap-2 text-sm">
-                <Plus size={15} /> Nouvelle zone
-              </button>
-              {zones.length === 0 ? (
-                <p className="text-center text-xs text-muted-foreground py-10">Aucune zone enregistrée pour ce site.</p>
-              ) : (
-                <ul className="space-y-2">
-                  {zones.map((z) => (
-                    <li key={z.id} className="glass-panel p-3" style={{ borderLeft: `3px solid ${RISK_META[z.risk_level].color}` }}>
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="font-display text-sm">{z.name}</div>
-                          {z.risk_factor && <div className="text-[11px] text-muted-foreground">{z.risk_factor}</div>}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[9px] px-1.5 py-0.5 rounded-full" style={{ background: `${RISK_META[z.risk_level].color}22`, color: RISK_META[z.risk_level].color }}>
-                            {RISK_META[z.risk_level].label}
-                          </span>
-                          <button onClick={() => deleteZone(z.id)} className="text-muted-foreground hover:text-red-500">
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </div>
-                      {z.recommendation && <p className="text-[11px] text-muted-foreground mt-1.5">{z.recommendation}</p>}
-                      <div className="text-[10px] mt-1.5" style={{ color: z.trap_installed ? "var(--teal)" : "var(--muted-foreground)" }}>
-                        {z.trap_installed ? "✓ Piège installé" : "Pas de piège installé"}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
-        </>
+        !selectedSiteId ? (
+          <p className="text-center text-xs text-muted-foreground py-10">Sélectionne d'abord un site dans l'onglet Sites.</p>
+        ) : (
+          <ZonesTab
+            zones={zoneViews}
+            selectedZone={selectedZoneView}
+            setSelectedZone={(z) => setSelectedZoneId(z?.id ?? null)}
+            onToggleTrap={toggleTrap}
+            onAddZone={(x, y) => { setPendingZonePos({ x, y }); setShowAddZone(true); }}
+            onDeleteZone={deleteZone}
+          />
+        )
       )}
 
-      {/* ─── ALERTES TAB ─── */}
       {tab === "alertes" && (
         <>
           <div className="flex gap-1.5 overflow-x-auto no-scrollbar pb-2 mb-3">
@@ -433,7 +330,7 @@ function ProDashboardPage() {
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="font-display text-sm">{a.speciesHint || "Non identifié"}</div>
-                      <div className="text-[10px] text-muted-foreground">{a.relativeLabel} · {a.period} · {a.estimatedZone.surfaceLabel}</div>
+                      <div className="text-[10px] text-muted-foreground">{a.period} · {a.estimatedZone.surfaceLabel}</div>
                     </div>
                     <div className="text-right">
                       <div className="font-mono-x text-sm text-teal">{a.confidence}%</div>
@@ -447,62 +344,56 @@ function ProDashboardPage() {
         </>
       )}
 
-      {/* ─── RAPPORTS TAB ─── */}
       {tab === "rapports" && (
-        <>
-          {!selectedSite ? (
-            <p className="text-center text-xs text-muted-foreground py-10">Sélectionne d'abord un site dans l'onglet Sites.</p>
-          ) : (
-            <>
-              <section className="glass-panel p-4 mb-3">
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-display">Journal d'interventions</span>
-                  <button onClick={() => setShowAddIntervention(true)} className="text-teal text-xs flex items-center gap-1">
-                    <Plus size={13} /> Ajouter
-                  </button>
-                </div>
-                {interventions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-4">Aucune intervention enregistrée.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {interventions.map((it) => (
-                      <li key={it.id} className="text-xs border-l-2 pl-3" style={{ borderColor: "rgba(0,229,195,0.4)" }}>
-                        <div className="font-display">{it.title}</div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {new Date(it.created_at).toLocaleString("fr-FR")} {it.operator ? `· ${it.operator}` : ""}
-                        </div>
-                        {it.description && <div className="text-[11px] text-muted-foreground mt-0.5">{it.description}</div>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </section>
-
-              <button onClick={() => setShowExport(true)} className="btn-primary w-full flex items-center justify-center gap-2 text-sm">
-                <FileText size={15} /> Générer le rapport d'intervention
-              </button>
-            </>
-          )}
-        </>
+        !selectedSiteId ? (
+          <p className="text-center text-xs text-muted-foreground py-10">Sélectionne d'abord un site dans l'onglet Sites.</p>
+        ) : (
+          <>
+            <section className="glass-panel p-4 mb-3">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-display">Journal d'interventions</span>
+                <button onClick={() => setShowAddIntervention(true)} className="text-teal text-xs flex items-center gap-1">
+                  + Ajouter
+                </button>
+              </div>
+              {interventionRows.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-4">Aucune intervention enregistrée.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {interventionRows.map((it) => (
+                    <li key={it.id} className="text-xs border-l-2 pl-3" style={{ borderColor: "rgba(0,229,195,0.4)" }}>
+                      <div className="font-display">{it.title}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {new Date(it.created_at).toLocaleString("fr-FR")} {it.operator ? `· ${it.operator}` : ""}
+                      </div>
+                      {it.description && <div className="text-[11px] text-muted-foreground mt-0.5">{it.description}</div>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <button onClick={() => setShowExport(true)} className="btn-primary w-full flex items-center justify-center gap-2 text-sm">
+              <FileText size={15} /> Générer le rapport d'intervention
+            </button>
+          </>
+        )
       )}
 
-      {/* ─── Modals ─── */}
-      {showAddSite && (
-        <AddSiteModal onClose={() => setShowAddSite(false)} onSubmit={addSite} />
+      {/* Modals */}
+      {showAddSite && <AddSiteModal onClose={() => setShowAddSite(false)} onSubmit={addSite} />}
+      {showAddZone && (
+        <AddZoneModal
+          onClose={() => { setShowAddZone(false); setPendingZonePos(null); }}
+          onSubmit={addZone}
+        />
       )}
-      {showAddZone && selectedSiteId && (
-        <AddZoneModal onClose={() => setShowAddZone(false)} onSubmit={addZone} />
-      )}
-      {showAddIntervention && selectedSiteId && (
-        <AddInterventionModal onClose={() => setShowAddIntervention(false)} onSubmit={addIntervention} />
-      )}
-      {showExport && selectedSite && (
+      {showAddIntervention && <AddInterventionModal onClose={() => setShowAddIntervention(false)} onSubmit={addIntervention} />}
+      {showExport && currentSiteView && (
         <ExportReportModal
-          site={selectedSite}
-          zones={zones}
-          interventions={interventions}
+          site={currentSiteView}
+          zones={zoneViews}
+          interventions={interventionRows}
           detections={detections}
-          scoreForSite={scoreForSite}
           exporting={exporting}
           setExporting={setExporting}
           onClose={() => setShowExport(false)}
@@ -514,18 +405,14 @@ function ProDashboardPage() {
   );
 }
 
-// ─── Modals ───────────────────────────────────────────────────────────────
+// ─── Modals (unchanged in spirit from lot 5, kept inline for now — will
+//     move to their own files in Phase 2c alongside the Gemini-styled
+//     AddDeviceModal/ExportModal/OnboardingWizard rework) ──────────────────
 
 function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}
-      onClick={onClose}
-    >
-      <div className="glass-panel w-full max-w-sm p-4" onClick={(e) => e.stopPropagation()}>
-        {children}
-      </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }} onClick={onClose}>
+      <div className="glass-panel w-full max-w-sm p-4" onClick={(e) => e.stopPropagation()}>{children}</div>
     </div>
   );
 }
@@ -553,16 +440,16 @@ function AddSiteModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f
   );
 }
 
-function AddZoneModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f: { name: string; risk_level: ProZone["risk_level"]; risk_factor: string; recommendation: string; trap_installed: boolean }) => void }) {
-  const [form, setForm] = useState<{ name: string; risk_level: ProZone["risk_level"]; risk_factor: string; recommendation: string; trap_installed: boolean }>({
-    name: "", risk_level: "modere", risk_factor: "", recommendation: "", trap_installed: false,
+function AddZoneModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f: { name: string; risk_level: RiskLevel; risk_factor: string; recommendation: string }) => void }) {
+  const [form, setForm] = useState<{ name: string; risk_level: RiskLevel; risk_factor: string; recommendation: string }>({
+    name: "", risk_level: "modere", risk_factor: "", recommendation: "",
   });
   return (
     <ModalShell onClose={onClose}>
       <h3 className="font-display text-sm mb-3">Nouvelle zone</h3>
       <div className="space-y-2 text-xs">
         <input placeholder="Nom de la zone" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }} />
-        <select value={form.risk_level} onChange={(e) => setForm({ ...form, risk_level: e.target.value as ProZone["risk_level"] })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+        <select value={form.risk_level} onChange={(e) => setForm({ ...form, risk_level: e.target.value as RiskLevel })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
           <option value="critique">Critique</option>
           <option value="eleve">Élevé</option>
           <option value="modere">Modéré</option>
@@ -570,10 +457,6 @@ function AddZoneModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f
         </select>
         <input placeholder="Facteur de risque (ex: eau stagnante)" value={form.risk_factor} onChange={(e) => setForm({ ...form, risk_factor: e.target.value })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }} />
         <textarea placeholder="Recommandation" value={form.recommendation} onChange={(e) => setForm({ ...form, recommendation: e.target.value })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }} rows={2} />
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={form.trap_installed} onChange={(e) => setForm({ ...form, trap_installed: e.target.checked })} />
-          Piège déjà installé
-        </label>
       </div>
       <div className="flex gap-2 mt-4">
         <button onClick={onClose} className="btn-ghost flex-1 text-xs">Annuler</button>
@@ -583,15 +466,15 @@ function AddZoneModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f
   );
 }
 
-function AddInterventionModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f: { type: ProIntervention["type"]; title: string; description: string; operator: string }) => void }) {
-  const [form, setForm] = useState<{ type: ProIntervention["type"]; title: string; description: string; operator: string }>({
+function AddInterventionModal({ onClose, onSubmit }: { onClose: () => void; onSubmit: (f: { type: ProInterventionRow["type"]; title: string; description: string; operator: string }) => void }) {
+  const [form, setForm] = useState<{ type: ProInterventionRow["type"]; title: string; description: string; operator: string }>({
     type: "treatment", title: "", description: "", operator: "",
   });
   return (
     <ModalShell onClose={onClose}>
       <h3 className="font-display text-sm mb-3">Nouvelle intervention</h3>
       <div className="space-y-2 text-xs">
-        <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as ProIntervention["type"] })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+        <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as ProInterventionRow["type"] })} className="w-full bg-transparent border rounded-md px-3 py-2" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
           <option value="treatment">Traitement</option>
           <option value="inspection">Inspection</option>
           <option value="sensor">Capteur</option>
@@ -610,27 +493,17 @@ function AddInterventionModal({ onClose, onSubmit }: { onClose: () => void; onSu
 }
 
 function ExportReportModal({
-  site, zones, interventions, detections, scoreForSite, exporting, setExporting, onClose,
+  site, zones, interventions, detections, exporting, setExporting, onClose,
 }: {
-  site: ProSite;
-  zones: ProZone[];
-  interventions: ProIntervention[];
-  detections: DetectionEvent[];
-  scoreForSite: (s: ProSite) => { risk: number; health: number; weather: WeatherSnapshot | null };
-  exporting: boolean;
-  setExporting: (v: boolean) => void;
-  onClose: () => void;
+  site: SiteView; zones: ZoneView[]; interventions: ProInterventionRow[]; detections: DetectionEvent[];
+  exporting: boolean; setExporting: (v: boolean) => void; onClose: () => void;
 }) {
   const [ready, setReady] = useState(false);
-  const { risk, health, weather } = scoreForSite(site);
   const recentDetections = detections.filter((d) => Date.now() - new Date(d.timestamp).getTime() < 30 * 24 * 3600 * 1000);
 
   useEffect(() => {
     setExporting(true);
-    const t = setTimeout(() => {
-      setExporting(false);
-      setReady(true);
-    }, 900);
+    const t = setTimeout(() => { setExporting(false); setReady(true); }, 900);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -645,33 +518,27 @@ function ExportReportModal({
       ) : (
         <div>
           <div className="flex justify-between items-center mb-3">
-            <h3 className="font-display text-sm flex items-center gap-2">
-              <ShieldAlert size={15} className="text-teal" /> Rapport d'intervention
-            </h3>
+            <h3 className="font-display text-sm flex items-center gap-2"><ShieldAlert size={15} className="text-teal" /> Rapport d'intervention</h3>
             <button onClick={onClose}><X size={15} className="text-muted-foreground" /></button>
           </div>
-          <div id="print-report" className="bg-black/20 rounded-lg p-3 text-[11px] font-mono-x space-y-1.5">
+          <div className="bg-black/20 rounded-lg p-3 text-[11px] font-mono-x space-y-1.5">
             <div className="text-center border-b border-dashed border-white/10 pb-2 mb-2">
               <div className="font-bold uppercase">Rapport d'intervention — MosquitoRadar</div>
               <div className="text-[9px] text-muted-foreground">Document généré, à valider par un professionnel — ne constitue pas un certificat de conformité sanitaire</div>
             </div>
             <div><strong>Site :</strong> {site.name}</div>
-            {site.client_name && <div><strong>Client :</strong> {site.client_name}</div>}
+            {site.clientName && <div><strong>Client :</strong> {site.clientName}</div>}
             <div><strong>Date :</strong> {new Date().toLocaleDateString("fr-FR")}</div>
-            <div><strong>Score de risque (indicatif) :</strong> {risk}/100</div>
-            <div><strong>Score de santé du site :</strong> {health}/100</div>
-            {weather && <div><strong>Météo au moment du rapport :</strong> {weather.temperatureC.toFixed(0)}°C, {weather.humidityPercent.toFixed(0)}% humidité</div>}
+            <div><strong>Score de risque (indicatif) :</strong> {site.riskScore}/100</div>
+            <div><strong>Score de santé du site :</strong> {site.healthScore}/100</div>
+            {site.weather && <div><strong>Météo au moment du rapport :</strong> {site.weather.temperatureC.toFixed(0)}°C, {site.weather.humidityPercent.toFixed(0)}% humidité</div>}
             <div><strong>Détections (30 derniers jours) :</strong> {recentDetections.length}</div>
             <div><strong>Zones à risque suivies :</strong> {zones.length}</div>
             <div><strong>Interventions enregistrées :</strong> {interventions.length}</div>
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={() => window.print()} className="btn-ghost flex-1 text-xs flex items-center justify-center gap-1.5">
-              <Printer size={13} /> Imprimer / PDF
-            </button>
-            <button onClick={onClose} className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5">
-              <Check size={13} /> Fermer
-            </button>
+            <button onClick={() => window.print()} className="btn-ghost flex-1 text-xs flex items-center justify-center gap-1.5"><Printer size={13} /> Imprimer / PDF</button>
+            <button onClick={onClose} className="btn-primary flex-1 text-xs flex items-center justify-center gap-1.5"><Check size={13} /> Fermer</button>
           </div>
         </div>
       )}
