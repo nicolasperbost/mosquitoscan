@@ -47,6 +47,7 @@ export type Database = {
           name: string
           sensors: Json
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           background_image_url?: string | null
@@ -56,6 +57,7 @@ export type Database = {
           name: string
           sensors?: Json
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           background_image_url?: string | null
@@ -65,6 +67,7 @@ export type Database = {
           name?: string
           sensors?: Json
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: []
       }
