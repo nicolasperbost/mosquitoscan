@@ -1,5 +1,18 @@
 import { Target, ShieldAlert, Wifi } from "lucide-react";
 
+// CORRECTIF (lot 10) :
+//  - Le texte d'état au repos affichait "SYNTAX_ERROR: SYS_OFFLINE" — ça
+//    ressemble à une vraie erreur, pas à de la décoration. Remplacé par un
+//    libellé neutre.
+//  - La position de la cible (distance en mètres, angle en degrés) était
+//    entièrement fabriquée à partir du nom de la zone ("Gauche"/"Droite"/
+//    autre → coordonnées et distance fixes codées en dur) — aucune mesure
+//    de distance n'existe réellement dans le système (seulement une zone
+//    nommée parmi 9). Affiché maintenant sans distance/angle inventés.
+//  - Le repli par défaut sur "Aedes"/"545Hz" quand speciesHint/frequency
+//    sont vides a été retiré — affiche "—" plutôt qu'une valeur plausible
+//    mais fausse.
+
 interface Props {
   isActive: boolean;
   isDetecting: boolean;
@@ -21,30 +34,28 @@ export function RadarVisualization({
     ? "#4B5563"
     : isDetecting
       ? confidence > 75
-        ? "#F43F5E" // Rose-red for critical tiger mosquito detection
-        : "#F59E0B" // Amber-yellow for general mosquito
-      : "#00E5C3"; // Teal for active listening/clean signal
+        ? "#F43F5E"
+        : "#F59E0B"
+      : "#00E5C3";
 
-  // Determine target coordinates based on zone or static offsets for simulation stability
+  // Position d'affichage du marqueur, dérivée du nom de zone pour donner un
+  // repère visuel approximatif (gauche/droite/centre) — ce n'est PAS une
+  // triangulation, juste un placement indicatif sur le cadran.
   const getTargetPosition = () => {
     if (!isDetecting) return null;
-    
-    // Position target dynamically based on the frequency or zone to look highly authentic
     if (zone?.includes("Gauche") || zone?.includes("Left")) {
-      return { x: 55, y: 75, angle: 125, distance: "3.4m" };
+      return { x: 55, y: 75 };
     } else if (zone?.includes("Droite") || zone?.includes("Right")) {
-      return { x: 145, y: 65, angle: 45, distance: "2.1m" };
-    } else {
-      // Default center-ish quadrant
-      return { x: 135, y: 125, angle: 310, distance: "1.7m" };
+      return { x: 145, y: 65 };
     }
+    return { x: 135, y: 125 };
   };
 
   const target = getTargetPosition();
 
   return (
     <div className="relative w-80 h-80 mx-auto flex flex-col items-center justify-center bg-[#070B14] rounded-full border border-teal-500/10 p-2 shadow-[0_0_40px_rgba(0,229,195,0.05)] select-none overflow-hidden">
-      
+
       {/* Outer compass rim */}
       <div className="absolute inset-0 rounded-full border border-teal-500/10 pointer-events-none">
         <div className="absolute top-1 left-1/2 -translate-x-1/2 text-[8px] font-mono text-teal-400/50 font-bold">N 000°</div>
@@ -71,39 +82,21 @@ export function RadarVisualization({
 
       {/* Grid Overlay with Ranges and Graticules */}
       <svg viewBox="0 0 200 200" className="absolute inset-0 w-full h-full pointer-events-none">
-        {/* Radar concentric range circles */}
-        {[85, 65, 45, 25].map((r, idx) => (
-          <g key={r}>
-            <circle
-              cx="100"
-              cy="100"
-              r={r}
-              fill="none"
-              stroke="rgba(0, 229, 195, 0.08)"
-              strokeWidth="0.5"
-              strokeDasharray={idx === 0 ? "none" : "2 2"}
-            />
-            {/* Range text labels in meters */}
-            <text
-              x="102"
-              y={100 - r + 3}
-              fill="rgba(0, 229, 195, 0.35)"
-              className="text-[5px] font-mono font-semibold"
-            >
-              {(idx + 1) * 2}m
-            </text>
-          </g>
+        {[85, 65, 45, 25].map((r) => (
+          <circle
+            key={r}
+            cx="100"
+            cy="100"
+            r={r}
+            fill="none"
+            stroke="rgba(0, 229, 195, 0.08)"
+            strokeWidth="0.5"
+          />
         ))}
-
-        {/* Angular azimuth crosshairs */}
         <line x1="100" y1="10" x2="100" y2="190" stroke="rgba(0, 229, 195, 0.12)" strokeWidth="0.5" />
         <line x1="10" y1="100" x2="190" y2="100" stroke="rgba(0, 229, 195, 0.12)" strokeWidth="0.5" />
-        
-        {/* Additional 45deg diagonals */}
         <line x1="36" y1="36" x2="164" y2="164" stroke="rgba(0, 229, 195, 0.04)" strokeWidth="0.3" />
         <line x1="36" y1="164" x2="164" y2="36" stroke="rgba(0, 229, 195, 0.04)" strokeWidth="0.3" />
-
-        {/* Tactical tick marks on the border */}
         {Array.from({ length: 12 }).map((_, i) => {
           const angle = (i * 30 * Math.PI) / 180;
           const x1 = 100 + 82 * Math.cos(angle);
@@ -111,15 +104,7 @@ export function RadarVisualization({
           const x2 = 100 + 85 * Math.cos(angle);
           const y2 = 100 + 85 * Math.sin(angle);
           return (
-            <line
-              key={i}
-              x1={x1}
-              y1={y1}
-              x2={x2}
-              y2={y2}
-              stroke="rgba(0, 229, 195, 0.3)"
-              strokeWidth="0.5"
-            />
+            <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(0, 229, 195, 0.3)" strokeWidth="0.5" />
           );
         })}
       </svg>
@@ -150,12 +135,10 @@ export function RadarVisualization({
             transform: "translate(-50%, -50%)",
           }}
         >
-          {/* Pulsing red blip */}
           <div className="relative flex items-center justify-center">
             <span className="absolute inline-flex h-4 w-4 rounded-full bg-rose-500 opacity-75 animate-ping" />
             <div className="w-2.5 h-2.5 rounded-full bg-rose-600 border border-white shadow-[0_0_10px_#F43F5E]" />
-            
-            {/* Target Reticle brackets */}
+
             <div className="absolute -inset-4 border border-rose-500/30 rounded flex items-center justify-center animate-[pulse_1s_infinite]">
               <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-rose-500" />
               <div className="absolute top-0 right-0 w-1.5 h-1.5 border-t border-r border-rose-500" />
@@ -163,16 +146,15 @@ export function RadarVisualization({
               <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-rose-500" />
             </div>
 
-            {/* Target Data Tag (HUD display) */}
             <div className="absolute left-6 top-1/2 -translate-y-1/2 bg-slate-950/90 border border-rose-500/45 rounded-lg px-2 py-1 text-[8px] font-mono text-slate-100 whitespace-nowrap shadow-lg shadow-black/80 backdrop-blur-md">
               <div className="flex items-center gap-1 text-[9px] font-bold text-rose-400">
                 <Target size={10} className="text-rose-400 animate-pulse" />
-                <span>CIBLE ACQUISE</span>
+                <span>SIGNAL DÉTECTÉ</span>
               </div>
               <div className="mt-0.5 border-t border-rose-500/20 pt-0.5 space-y-0.5">
-                <div>ESPÈCE: <span className="text-teal-300 font-bold">{speciesHint?.split(" ")[0] || "Aedes"}</span></div>
-                <div>FREQ: <span className="text-teal-300">{frequency ? `${Math.round(frequency)}Hz` : "545Hz"}</span></div>
-                <div>DIST: <span className="text-teal-300">{target.distance}</span> · AZ: <span className="text-teal-300">{target.angle}°</span></div>
+                <div>ESPÈCE: <span className="text-teal-300 font-bold">{speciesHint?.split(" ")[0] || "—"}</span></div>
+                <div>FREQ: <span className="text-teal-300">{frequency ? `${Math.round(frequency)}Hz` : "—"}</span></div>
+                <div>ZONE: <span className="text-teal-300">{zone || "—"}</span></div>
                 <div className="flex items-center gap-1 text-[7px] text-amber-400 font-extrabold animate-pulse">
                   <ShieldAlert size={8} /> CONF: {confidence}%
                 </div>
@@ -203,13 +185,12 @@ export function RadarVisualization({
         <span>
           {isActive
             ? isDetecting
-              ? "ANALYSE ACOUSTIQUE MULTI-MEMS..."
-              : "RECHERCHE SIGNAL BIO-ACOUSTIQUE..."
-            : "SYNTAX_ERROR: SYS_OFFLINE"}
+              ? "ANALYSE ACOUSTIQUE EN COURS..."
+              : "RECHERCHE DE SIGNAL..."
+            : "EN VEILLE"}
         </span>
       </div>
 
-      {/* Custom Keyframe animation style for sweep spin */}
       <style>{`
         @keyframes radar-spin {
           from { transform: rotate(0deg); }
