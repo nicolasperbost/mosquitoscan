@@ -48,7 +48,7 @@ export const Route = createFileRoute("/detection")({
 });
 
 function DetectionPage() {
-  const { state, startListening, stopListening, triggerMockMeasurement, isSimulating } = useMosquitoDetection();
+  const { state, startListening, stopListening } = useMosquitoDetection();
   const [started, setStarted] = useState(false);
   const [sweep, setSweep] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
@@ -204,26 +204,12 @@ function DetectionPage() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-3 w-full max-w-xs">
-            <button
-              onClick={handleStart}
-              className="btn-primary text-lg !py-5 !px-10 flex items-center justify-center gap-2 animate-cta-pulse w-full"
-            >
-              <Play size={20} /> Démarrer l'écoute
-            </button>
-
-            <button
-              onClick={() => {
-                setStarted(true);
-                setSweep(true);
-                setTimeout(() => setSweep(false), 1200);
-                triggerMockMeasurement();
-              }}
-              className="btn-ghost text-sm !py-3 !px-6 border border-white/10 hover:border-white/20 flex items-center justify-center gap-2 rounded-full w-full"
-            >
-              <Radio size={16} className="text-teal" /> Déclencher la mesure (Démo)
-            </button>
-          </div>
+          <button
+            onClick={handleStart}
+            className="btn-primary text-lg !py-5 !px-10 flex items-center gap-2 animate-cta-pulse"
+          >
+            <Play size={20} /> Démarrer l'écoute
+          </button>
 
           <p className="text-[10px] text-muted-foreground text-center max-w-xs">
             Posez le smartphone, micro vers le haut. L'analyse cible la bande 300–800 Hz.
@@ -475,20 +461,6 @@ function DetectionPage() {
           >
             {state.isListening ? <Pause size={14} /> : <Play size={14} />}
             {state.isListening ? "Pause" : "Écoute Live"}
-          </button>
-
-          <button
-            onClick={() => {
-              setSweep(true);
-              setTimeout(() => setSweep(false), 1200);
-              triggerMockMeasurement();
-            }}
-            disabled={isSimulating}
-            className="btn-primary flex items-center gap-2 !py-2.5 !px-5 text-[13px] bg-teal text-slate-950 font-semibold hover:bg-teal-hover transition-all rounded-full shadow-lg"
-            style={{ boxShadow: "0 0 12px rgba(0, 229, 195, 0.3)" }}
-          >
-            <Play size={14} className="fill-current" />
-            {isSimulating ? "Simulation..." : "Déclencher la mesure"}
           </button>
         </div>
         {validation && (
