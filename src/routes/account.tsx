@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BottomNav } from "@/components/BottomNav";
-import { ChevronLeft, Cloud, CloudOff, LogOut, Mail, Lock } from "lucide-react";
+import { ChevronLeft, Cloud, CloudOff, LogOut, Mail, Lock, ArrowLeft } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -16,11 +16,12 @@ export const Route = createFileRoute("/account")({
 });
 
 function AccountPage() {
-  const { user, loading, signIn, signUp, signOut } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { user, loading, signIn, signUp, signOut, resetPassword } = useAuth();
+  const [mode, setMode] = useState<"signin" | "signup" | "forgot">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,6 +41,22 @@ function AccountPage() {
     } else {
       toast.success("Connecté — synchronisation en cours…");
     }
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email) {
+      toast.error("Renseigne ton email");
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await resetPassword(email);
+    setSubmitting(false);
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    setResetSent(true);
   };
 
   return (
@@ -76,6 +93,49 @@ function AccountPage() {
             <LogOut size={14} /> Se déconnecter
           </button>
         </section>
+      ) : mode === "forgot" ? (
+        <>
+          <button
+            onClick={() => { setMode("signin"); setResetSent(false); }}
+            className="text-muted-foreground hover:text-teal flex items-center gap-1 text-xs mb-4"
+          >
+            <ArrowLeft size={14} /> Retour à la connexion
+          </button>
+
+          {resetSent ? (
+            <section className="glass-panel p-4 text-center">
+              <Mail size={24} className="mx-auto text-teal mb-3" />
+              <p className="text-sm font-display mb-2">Email envoyé</p>
+              <p className="text-[11px] text-muted-foreground">
+                Si un compte existe pour <strong className="text-foreground">{email}</strong>, un lien de réinitialisation
+                vient d'être envoyé. Clique dessus pour choisir un nouveau mot de passe.
+              </p>
+            </section>
+          ) : (
+            <form onSubmit={handleForgotSubmit} className="glass-panel p-4 space-y-3">
+              <p className="text-[11px] text-muted-foreground mb-1">
+                Renseigne l'email de ton compte — on t'envoie un lien pour choisir un nouveau mot de passe.
+              </p>
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Mail size={11} /> Email
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="w-full bg-transparent border rounded-md px-3 py-2 text-sm mt-1"
+                  style={{ borderColor: "rgba(255,255,255,0.1)" }}
+                  autoComplete="email"
+                  autoFocus
+                />
+              </div>
+              <button type="submit" disabled={submitting} className="btn-primary w-full text-sm">
+                {submitting ? "…" : "Envoyer le lien"}
+              </button>
+            </form>
+          )}
+        </>
       ) : (
         <>
           <section
@@ -120,9 +180,20 @@ function AccountPage() {
               />
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                <Lock size={11} /> Mot de passe
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                  <Lock size={11} /> Mot de passe
+                </label>
+                {mode === "signin" && (
+                  <button
+                    type="button"
+                    onClick={() => { setMode("forgot"); setResetSent(false); }}
+                    className="text-[10px] text-teal hover:underline"
+                  >
+                    Mot de passe oublié ?
+                  </button>
+                )}
+              </div>
               <input
                 type="password"
                 value={password}
