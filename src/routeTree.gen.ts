@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SiteMapRouteImport } from './routes/site-map'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ProRouteImport } from './routes/pro'
 import { Route as MultiRouteImport } from './routes/multi'
 import { Route as ImportRouteImport } from './routes/import'
@@ -36,6 +37,11 @@ const SetupRoute = SetupRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProRoute = ProRouteImport.update({
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/import': typeof ImportRoute
   '/multi': typeof MultiRoute
   '/pro': typeof ProRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/site-map': typeof SiteMapRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/import': typeof ImportRoute
   '/multi': typeof MultiRoute
   '/pro': typeof ProRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/site-map': typeof SiteMapRoute
@@ -130,6 +138,7 @@ export interface FileRoutesById {
   '/import': typeof ImportRoute
   '/multi': typeof MultiRoute
   '/pro': typeof ProRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/site-map': typeof SiteMapRoute
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/multi'
     | '/pro'
+    | '/reset-password'
     | '/settings'
     | '/setup'
     | '/site-map'
@@ -162,6 +172,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/multi'
     | '/pro'
+    | '/reset-password'
     | '/settings'
     | '/setup'
     | '/site-map'
@@ -177,6 +188,7 @@ export interface FileRouteTypes {
     | '/import'
     | '/multi'
     | '/pro'
+    | '/reset-password'
     | '/settings'
     | '/setup'
     | '/site-map'
@@ -193,6 +205,7 @@ export interface RootRouteChildren {
   ImportRoute: typeof ImportRoute
   MultiRoute: typeof MultiRoute
   ProRoute: typeof ProRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
   SiteMapRoute: typeof SiteMapRoute
@@ -220,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pro': {
@@ -305,6 +325,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImportRoute: ImportRoute,
   MultiRoute: MultiRoute,
   ProRoute: ProRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
   SiteMapRoute: SiteMapRoute,
@@ -313,3 +334,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
