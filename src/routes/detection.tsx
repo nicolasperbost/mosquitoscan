@@ -9,8 +9,10 @@ import {
   HelpCircle,
   Moon,
   Info,
+  Lock,
 } from "lucide-react";
 import { useMosquitoDetection } from "@/hooks/useMosquitoDetection";
+import { useAuth } from "@/hooks/useAuth";
 import { RadarVisualization } from "@/components/radar/RadarVisualization";
 import { HeatmapGrid } from "@/components/radar/HeatmapGrid";
 import { FrequencySpectrum } from "@/components/audio/FrequencySpectrum";
@@ -20,6 +22,12 @@ import { IsometricRoomView } from "@/components/room/IsometricRoomView";
 import { useRoomStore, roomStore } from "@/lib/roomStore";
 import type { DetectionEvent, Face } from "@/types/room";
 import { learningStore, surfaceBias } from "@/lib/learning";
+import {
+  TRIAL_SESSION_LIMIT,
+  getTrialSessionsRemaining,
+  hasTrialRemaining,
+  recordTrialSessionUsed,
+} from "@/lib/trialLimit";
 import { toast } from "sonner";
 
 function hash(s: string) {
@@ -49,6 +57,7 @@ export const Route = createFileRoute("/detection")({
 
 function DetectionPage() {
   const { state, startListening, stopListening } = useMosquitoDetection();
+  const { user, loading: authLoading } = useAuth();
   const [started, setStarted] = useState(false);
   const [sweep, setSweep] = useState(false);
   const [validation, setValidation] = useState<string | null>(null);
@@ -58,6 +67,9 @@ function DetectionPage() {
   const room = useRoomStore((s) => s.room);
   const [viewMode, setViewMode] = useState<"radar" | "3d" | "floorplan" | "elevation">("radar");
   const [elevationFace, setElevationFace] = useState<Face>("east");
+  // Recalculé à chaque montage plutôt qu'une seule fois, pour refléter un
+  // essai consommé dans un autre onglet/session récemment.
+  const [trialRemaining, setTrialRemaining] = useState(() => getTrialSessionsRemaining());
 
   useEffect(() => () => stopListening(), [stopListening]);
 
@@ -68,6 +80,18 @@ function DetectionPage() {
   }, [state.error]);
 
   const handleStart = async () => {
+    // CORRECTIF (lot 12) : sans compte, l'essai gratuit est limité à
+    // TRIAL_SESSION_LIMIT sessions. Un utilisateur connecté n'a aucune
+    // limite (pas de palier payant construit pour l'instant — avoir un
+    // compte suffit à lever la limite).
+    if (!user && !hasTrialRemaining()) {
+      toast.error("Essais gratuits épuisés — crée un compte pour continuer.");
+      return;
+    }
+    if (!user) {
+      recordTrialSessionUsed();
+      setTrialRemaining(getTrialSessionsRemaining());
+    }
     setStarted(true);
     setSweep(true);
     setTimeout(() => setSweep(false), 1200);
@@ -173,6 +197,8 @@ function DetectionPage() {
 
   // EN ATTENTE — pas encore démarré
   if (!started) {
+    const trialExhausted = !authLoading && !user && trialRemaining <= 0;
+
     return (
       <main className="min-h-screen pb-32 px-4 pt-6 max-w-md mx-auto flex flex-col">
         <header className="flex items-center justify-between mb-6">
@@ -184,37 +210,61 @@ function DetectionPage() {
           </span>
         </header>
 
-        <div className="flex-1 flex flex-col items-center justify-center gap-8">
-          <div className="relative w-48 h-48 flex items-center justify-center">
-            {[0, 0.9].map((d, i) => (
-              <span
-                key={i}
-                className="absolute inset-0 rounded-full border-2 animate-sonar"
-                style={{
-                  borderColor: "rgba(0,229,195,0.4)",
-                  animationDelay: `${d}s`,
-                  animationDuration: "3s",
-                }}
-              />
-            ))}
-            <div className="text-center">
-              <p className="text-xs text-muted-foreground uppercase tracking-widest">
-                Microphone prêt
+        {trialExhausted ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-5 text-center">
+            <div
+              className="w-16 h-16 rounded-2xl flex items-center justify-center"
+              style={{ background: "rgba(245,158,11,0.1)" }}
+            >
+              <Lock size={26} className="text-amber-x" />
+            </div>
+            <div>
+              <p className="text-sm font-display mb-1">Essais gratuits épuisés</p>
+              <p className="text-xs text-muted-foreground max-w-xs">
+                Tu as utilisé tes {TRIAL_SESSION_LIMIT} sessions d'essai sans compte. Crée un compte gratuit pour
+                continuer à utiliser MosquitoRadar sans limite.
               </p>
             </div>
+            <Link to="/account" className="btn-primary text-sm">Créer un compte</Link>
           </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center gap-8">
+            <div className="relative w-48 h-48 flex items-center justify-center">
+              {[0, 0.9].map((d, i) => (
+                <span
+                  key={i}
+                  className="absolute inset-0 rounded-full border-2 animate-sonar"
+                  style={{
+                    borderColor: "rgba(0,229,195,0.4)",
+                    animationDelay: `${d}s`,
+                    animationDuration: "3s",
+                  }}
+                />
+              ))}
+              <div className="text-center">
+                <p className="text-xs text-muted-foreground uppercase tracking-widest">
+                  Microphone prêt
+                </p>
+              </div>
+            </div>
 
-          <button
-            onClick={handleStart}
-            className="btn-primary text-lg !py-5 !px-10 flex items-center gap-2 animate-cta-pulse"
-          >
-            <Play size={20} /> Démarrer l'écoute
-          </button>
+            <button
+              onClick={handleStart}
+              className="btn-primary text-lg !py-5 !px-10 flex items-center gap-2 animate-cta-pulse"
+            >
+              <Play size={20} /> Démarrer l'écoute
+            </button>
 
-          <p className="text-[10px] text-muted-foreground text-center max-w-xs">
-            Posez le smartphone, micro vers le haut. L'analyse cible la bande 300–800 Hz.
-          </p>
-        </div>
+            <p className="text-[10px] text-muted-foreground text-center max-w-xs">
+              Posez le smartphone, micro vers le haut. L'analyse cible la bande 300–800 Hz.
+            </p>
+            {!authLoading && !user && (
+              <p className="text-[10px] text-teal text-center">
+                {trialRemaining} essai{trialRemaining > 1 ? "s" : ""} gratuit{trialRemaining > 1 ? "s" : ""} restant{trialRemaining > 1 ? "s" : ""} sans compte
+              </p>
+            )}
+          </div>
+        )}
 
         <BottomNav />
       </main>
